@@ -1,0 +1,22 @@
+.env
+.env.*
+!.env.example
+
+# Local editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Database dumps and backups
+*.dump
+*.backup
+
+# Generated LaTeX files
+docs/latex/*.aux
+docs/latex/*.fdb_latexmk
+docs/latex/*.fls
+docs/latex/*.log
+docs/latex/*.out
+docs/latex/*.synctex.gz
+docs/latex/*.toc
