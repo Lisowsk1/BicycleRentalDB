@@ -1,126 +1,172 @@
 # Bicycle Rental
 
-PostgreSQL project scaffold for the Bicycle Sharing System. This repository currently contains local database tooling, an initial `bicycle_rental` schema migration, and the [requirements specification](docs/latex/Bicycle_Rental_V1.4.tex). Domain tables, seed data, and application features are not implemented yet.
+A PostgreSQL 18 database project using Docker and Flyway. The setup currently creates an empty `bicycle_rental` schema. Everyone runs their own database; Git shares the SQL changes.
 
-## Prerequisites
-
-- Git.
-- Docker Desktop with Linux containers and Docker Compose v2. Start Docker Desktop before running the commands below.
-- An optional PostgreSQL client, such as DataGrip, for browsing the database. A local PostgreSQL installation is not required.
-
-Run all commands from the repository root.
-
-## Team collaboration
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for inviting collaborators, cloning the repository, working on branches, reviewing pull requests, and coordinating migrations. Each teammate runs a separate local database with the same Compose configuration. Git shares migrations; it does not share live database contents.
-
-The [GitHub Actions database check](.github/workflows/database.yml) starts PostgreSQL and checks all migrations on pushes and pull requests once this repository is published on GitHub.
-
-See the [CI setup guide](docs/ci.md) for enabling the workflow, requiring a passing check before merging, and reproducing failures locally.
+The commands below use **PowerShell**. Run them from the project folder containing [compose.yml](compose.yml). Replace anything in `<angle-brackets>` with your own value before running a command.
 
 ## First start
 
-1. Create your local configuration in PowerShell (skip this if `.env` already exists):
+### 1. Install the tools
 
-   ```powershell
-   Copy-Item .env.example .env
-   ```
+Install **Git** and **Docker Desktop**. Open Docker Desktop, select Linux containers if needed, and wait for it to finish starting. Then open a new terminal and check:
 
-2. Edit `.env` and choose a local development password. The template defines `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and optional `POSTGRES_PORT` (defaults to `5432`). Keep `.env` out of Git.
+```powershell
+git --version
+docker --version
+docker compose version
+```
 
-3. Validate the configuration and start PostgreSQL:
+You do not need to install PostgreSQL or Flyway separately.
 
-   ```powershell
-   docker compose config --quiet
-   docker compose up -d --wait db
-   ```
+### 2. Get the project
 
-4. Apply the versioned migrations, then inspect their status:
+Accept the owner's GitHub invitation, then copy the repository's clone URL from its **Code** button:
 
-   ```powershell
-   docker compose run --rm flyway migrate
-   docker compose run --rm flyway info
-   ```
+```powershell
+git clone <repository-url>
+cd BicycleRental
+```
 
-   The `flyway` service uses the `tools` profile so it does not run during a normal `docker compose up`. Explicitly targeting it with `run` enables it automatically. It waits for the database health check before connecting. The first migration creates only the empty `bicycle_rental` schema.
+If you already have the project, open its folder and skip cloning. The owner can find publishing and invitation instructions in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Logins and passwords explained simply
+### 3. Create your local settings
 
-Think of PostgreSQL as a locked house:
+Copy the shared template once. Skip this command if you already have `.env`:
 
-- `POSTGRES_DB` is the house's name: which database to open.
-- `POSTGRES_USER` is the login name.
-- `POSTGRES_PASSWORD` is that login's secret password.
-- `POSTGRES_PORT` is the door number your computer connects through, usually `5432`.
+```powershell
+Copy-Item .env.example .env
+```
 
-[.env.example](.env.example) is a **blank instruction card shared with your friends**. Its password is just a placeholder.
+Open `.env` in your editor. Keep these defaults and replace the password with one of your own:
 
-[.env](.env) is **your filled-in private card**. Docker Compose reads it to configure your local database login. Git ignores it, so it stays on your computer. You create it by copying the example during the first-start steps above.
+```dotenv
+POSTGRES_DB=bicycle_rental
+POSTGRES_USER=bicycle_rental
+POSTGRES_PASSWORD=replace_with_your_local_password
+POSTGRES_PORT=5432
+```
 
-Each friend makes their own copy and chooses their own password. You do not need matching passwords because everyone runs a separate database.
+Think of the database as a locked house:
 
-**One catch:** these values create the database and login the first time PostgreSQL starts with an empty data volume. Changing the password in `.env` afterward does **not** change the existing database password.
-
-## Connect
-
-Use these settings in your database client:
-
-| Setting | Value |
+| Setting | Meaning |
 | --- | --- |
-| Host | `127.0.0.1` |
-| Port | `POSTGRES_PORT` from `.env`, or `5432` |
-| Database | `POSTGRES_DB` from `.env` |
-| Username | `POSTGRES_USER` from `.env` |
-| Password | `POSTGRES_PASSWORD` from `.env` |
-| Project schema | `bicycle_rental` |
+| `POSTGRES_DB` | The database's name |
+| `POSTGRES_USER` | Your database login name |
+| `POSTGRES_PASSWORD` | The login's secret password |
+| `POSTGRES_PORT` | The door number, usually `5432` |
 
-PostgreSQL is exposed only on the local loopback interface. Flyway connects internally to `db:5432`, regardless of the host port. These credentials are for local development; the image creates `POSTGRES_USER` as a database superuser.
+[.env.example](.env.example) is the shared blank instruction card. `.env` is your private filled-in copy, ignored by Git. Each friend can choose a different password because each database is separate. These are database credentials, not your GitHub login.
 
-To open `psql` inside the container from PowerShell:
+### 4. Start the database
+
+```powershell
+docker compose config --quiet
+docker compose up -d --wait db
+```
+
+The first command produces no output when the configuration is valid. The second downloads PostgreSQL if needed and waits until it is ready. Stop and fix any error before continuing.
+
+### 5. Apply the SQL migrations
+
+A migration is a numbered SQL file that records a database change. Flyway applies new files in order and remembers which ones have run.
+
+```powershell
+docker compose run --rm flyway migrate
+docker compose run --rm flyway validate
+docker compose run --rm flyway info
+```
+
+All three commands should finish successfully. The migration list should show `V001` as applied, with no pending migrations. Your database is ready.
+
+### 6. Open the database
+
+You can use the included `psql` terminal:
 
 ```powershell
 docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
-In `psql`, use `\dn` to list schemas and `\q` to exit. Flyway stores migration history in `public.flyway_schema_history`; future project objects should be schema-qualified with `bicycle_rental.`.
+Type `\dn` to list schemas, `\dt bicycle_rental.*` to list project tables, and `\q` to exit. An empty project schema is expected until table migrations are added.
 
-## Daily commands
+Alternatively, connect from a database client such as pgAdmin or DBeaver:
+
+| Connection field | Value |
+| --- | --- |
+| Host | `127.0.0.1` |
+| Port | Your `POSTGRES_PORT`, normally `5432` |
+| Database | Your `POSTGRES_DB` |
+| Username | Your `POSTGRES_USER` |
+| Password | Your `POSTGRES_PASSWORD` |
+| Project schema | `bicycle_rental` |
+
+## Work on the project
+
+### 1. Get the latest changes and create a branch
+
+Start Docker Desktop. From the project folder, run the following with a clean Git working directory. Replace `<default-branch>` with the team's branch, usually `main` or `master`:
 
 ```powershell
-# Start the existing database
+git switch <default-branch>
+git pull --ff-only
+git switch -c feature/your-change
 docker compose up -d --wait db
-
-# Check service status and logs
-docker compose ps
-docker compose logs --tail 100 db
-
-# Validate applied migration checksums and apply new migrations
-docker compose run --rm flyway validate
 docker compose run --rm flyway migrate
+```
 
-# Stop containers while keeping the database volume
+Use a new branch name for each task. Pulling Git changes downloads migration files; running Flyway updates your local database.
+
+### 2. Make your SQL change
+
+Agree on the next available version with the team. Create a new SQL file in [db/migrations](db/migrations), for example `V002_short_description.sql`.
+
+Use **one underscore** between the version and description. Write project objects with the `bicycle_rental.` schema prefix. Preserve migrations already merged or shared; add a new migration to change their result. Changes made only in a database GUI will not reach your friends.
+
+### 3. Apply and check your change
+
+```powershell
+docker compose run --rm flyway migrate
+docker compose run --rm flyway validate
+docker compose run --rm flyway info
+```
+
+Check the result in your database client. Fix errors before sharing the change.
+
+### 4. Share it for review
+
+```powershell
+git diff
+git status --short
+git add <changed-file-path>
+git commit -m "Describe your change"
+git push -u origin feature/your-change
+```
+
+Repeat `git add` for each file you want to include. Never commit `.env` or private data.
+
+Open a pull request on GitHub. Wait for the **Database setup** CI check to pass and ask a teammate to review before merging. CI starts a fresh database and checks the migrations automatically. See [the CI guide](docs/ci.md) for enabling it and [CONTRIBUTING.md](CONTRIBUTING.md) for team rules.
+
+### 5. Stop when finished
+
+```powershell
 docker compose down
 ```
 
-Database files persist in the Compose-managed `postgres_data` volume. PostgreSQL 18 mounts its data under `/var/lib/postgresql`, as configured in [compose.yml](compose.yml).
-
-## Migration workflow
-
-Store SQL migrations in [db/migrations](db/migrations). Use one underscore between the version and description: `V001_create_schema.sql`, then `V002_short_description.sql`, and so on. Flyway is configured with `FLYWAY_SQL_MIGRATION_SEPARATOR: "_"` in [compose.yml](compose.yml). Coordinate version numbers with other contributors. Add a new migration for each change; do not edit migrations that have already been applied to a shared database, because Flyway validates their checksums. Migration filenames are validated, and Flyway `clean` is disabled.
-
-Migrations run explicitly through Flyway. They are not mounted into PostgreSQL's first-start initialization directory, so new migrations can also be applied to an existing database.
+Your database data stays saved. Next time, start Docker Desktop and run `docker compose up -d --wait db` again.
 
 ## Troubleshooting and local reset
 
-- If `docker` is not recognized, install Docker Desktop or reopen your terminal after installation. If the engine is unavailable, start Docker Desktop and ensure Linux containers are selected.
-- If port `5432` is in use, set a different `POSTGRES_PORT` in `.env` and rerun `docker compose up -d --wait db`.
-- Database name, user, and password are initialized only when the data volume is empty. Editing `.env` does not change credentials in an existing database. Restore the original values or deliberately reset disposable local data.
-- To recreate a disposable local database, the following command **permanently deletes all database data in this Compose project's volumes**:
+- **Docker command missing:** install Docker Desktop and reopen your terminal.
+- **Cannot connect to Docker:** start Docker Desktop and wait until it is ready.
+- **Port already in use:** change `POSTGRES_PORT` in `.env` to `5433`, run `docker compose up -d --wait db` again, and use `5433` in your database client.
+- **Login fails after editing `.env`:** the database login is created only on the first start with an empty volume. Editing `.env` does not change an existing password. Restore the original settings or reset disposable local data below.
+- **Need logs:** run `docker compose logs --tail 100 db`.
 
-  ```powershell
-  docker compose down --volumes
-  docker compose up -d --wait db
-  docker compose run --rm flyway migrate
-  ```
+To start over, **these commands permanently delete your local database data** and recreate it from the migrations. Back up anything you need first:
 
-Keep backups of any data you need before resetting. This scaffold does not configure production deployment or automated backups.
+```powershell
+docker compose down --volumes
+docker compose up -d --wait db
+docker compose run --rm flyway migrate
+```
+
+The [requirements specification](docs/latex/Bicycle_Rental_V1.4.tex) describes the planned project features.
