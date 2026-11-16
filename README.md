@@ -6,7 +6,7 @@ PostgreSQL project scaffold for the Bicycle Sharing System. This repository curr
 
 - Git.
 - Docker Desktop with Linux containers and Docker Compose v2. Start Docker Desktop before running the commands below.
-- An optional PostgreSQL client, such as pgAdmin or DBeaver, for browsing the database. A local PostgreSQL installation is not required.
+- An optional PostgreSQL client, such as DataGrip, for browsing the database. A local PostgreSQL installation is not required.
 
 Run all commands from the repository root.
 
