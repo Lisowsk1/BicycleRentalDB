@@ -169,4 +169,4 @@ docker compose up -d --wait db
 docker compose run --rm flyway migrate
 ```
 
-The [requirements specification](docs/latex/Bicycle_Rental_V1.4.tex) describes the planned project features.
+The [requirements specification](docs/latex) describes the planned project features.
