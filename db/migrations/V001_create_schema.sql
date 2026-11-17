@@ -1,1 +1,1 @@
-CREATE SCHEMA IF NOT EXISTS bicycle_rental;
+CREATE SCHEMA bicycle_rental;
