@@ -50,7 +50,7 @@ Open a pull request against the default branch. Ask a teammate to review it and 
 
 ## Coordinate database changes
 
-- Agree on the next migration version before starting. Use `V002_short_description.sql` after the existing `V001_create_schema.sql` migration, then keep increasing the version. Separate the version and description with one underscore.
+- Agree on the next migration version before starting. Versions `001` through `003` already exist; use `V004_short_description.sql` only if that version is still available, then keep increasing the version. Separate the version and description with one underscore.
 - Check open pull requests as well as the default branch for reserved migration numbers. Two different filenames with the same Flyway version still conflict.
 - Before merging, bring the latest default branch into your feature branch and rerun the checks. If a migration version conflicts, coordinate with its author. Renumber only an unmerged migration used on disposable local databases; reset those local databases as described in the [README](README.md#troubleshooting-and-local-reset) before rerunning migrations.
 - Once a migration is merged or applied to a shared database, preserve it. Add another migration to change its result.
