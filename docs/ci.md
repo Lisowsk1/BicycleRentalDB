@@ -11,7 +11,7 @@ On pull requests, before starting Docker, the workflow runs a [migration history
 3. Apply every Flyway migration.
 4. Validate migration naming and checksums.
 5. Run migration again to confirm the completed history can be rerun.
-6. Show migration status and run [setup checks](../db/checks/setup.sql). These fail if the project schema or successful migration history is missing, or if migration history contains failures.
+6. Show migration status and run [setup checks](../db/checks/setup.sql). These verify the project schema, successful migration history, the tariff and audit tables, all three enums and their ordered labels, and the two active seed tariffs (regular 2.50 and electric 4.50 PLN per 900 seconds). Failed migration history also fails the check. Update the expected values when a future migration intentionally changes the initial configuration.
 7. Show PostgreSQL logs on failure and remove the job's containers and volumes on completion.
 
 The job has a ten-minute timeout, read-only repository permissions, and disposable database credentials defined in the workflow. No GitHub secrets or local `.env` file are required. A newer run cancels an older run for the same branch or pull request and event type.
@@ -51,10 +51,10 @@ docker compose run --rm flyway migrate
 docker compose run --rm flyway info
 ```
 
-To run the same SQL setup check in PowerShell, replace the placeholders with your local database username and database name:
+To run the same SQL setup check in PowerShell using the container's configured username and database:
 
 ```powershell
-Get-Content -Raw db/checks/setup.sql | docker compose exec -T db psql --username <username> --dbname <database> --set=ON_ERROR_STOP=1
+Get-Content -Raw db/checks/setup.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
 ```
 
 CI always starts with an empty database. It does not yet test upgrades with production data or implement application-level tests.
