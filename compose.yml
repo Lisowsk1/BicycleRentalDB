@@ -28,6 +28,8 @@ services:
       FLYWAY_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       FLYWAY_USER: ${POSTGRES_USER}
       FLYWAY_PASSWORD: ${POSTGRES_PASSWORD}
+      FLYWAY_DEFAULT_SCHEMA: bicycle_rental
+      FLYWAY_CREATE_SCHEMAS: "true"
       FLYWAY_LOCATIONS: filesystem:/flyway/sql
       FLYWAY_SQL_MIGRATION_SEPARATOR: "_"
       FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
