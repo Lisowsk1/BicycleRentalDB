@@ -4,7 +4,23 @@
 -- derives it from its validated session, never from client input.
 -- Error codes: 42501 not permitted, 22023 invalid input, 23505 duplicate email, P0002 not found.
 
-
+-- ---------- audit actor must be a staff account ----------
+-- V002 attaches audit_entry.staff_id -> staff only if the staff table already existed. It did not
+-- (staff arrives in V004), so the foreign key was never created. Add it here, where audit writes start
+-- (F-070: the actor of an audit entry is a staff account). Skipped if it already exists.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_audit_entry_staff'
+          AND conrelid = 'bicycle_rental.audit_entry'::regclass
+    ) THEN
+        ALTER TABLE bicycle_rental.audit_entry
+            ADD CONSTRAINT fk_audit_entry_staff
+            FOREIGN KEY (staff_id) REFERENCES bicycle_rental.staff (account_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT;
+    END IF;
+END $$;
 -- ---------- internal helpers (not granted to the application role) ----------
 
 CREATE FUNCTION bicycle_rental.require_staff(p_actor_id bigint)
