@@ -7,8 +7,6 @@
 --     so that every 'electric' bicycle has exactly one electric_bicycle
 --     record and no 'regular' bicycle has one.
 
-BEGIN;
-
 SET LOCAL search_path = bicycle_rental, public;
 
 -- 1. Electric bicycle table
@@ -37,6 +35,23 @@ CREATE TABLE bicycle_rental.electric_bicycle (
             OR (battery_percentage >= 0 AND battery_percentage <= 100)
         )
 );
+
+-- Subtype identities cannot be reassigned: checking only NEW.bicycle_id on UPDATE
+-- would otherwise leave the old electric parent without a subtype at commit.
+CREATE FUNCTION bicycle_rental.electric_bicycle_protect_identity()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.bicycle_id IS DISTINCT FROM OLD.bicycle_id THEN
+        RAISE EXCEPTION 'Electric bicycle identity cannot be changed' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER trg_electric_bicycle_identity_immutable
+    BEFORE UPDATE ON bicycle_rental.electric_bicycle
+    FOR EACH ROW EXECUTE FUNCTION bicycle_rental.electric_bicycle_protect_identity();
 
 -- 2. Subtype consistency check function
 CREATE FUNCTION bicycle_rental.check_electric_bicycle_subtype()
@@ -75,14 +90,14 @@ BEGIN
        AND NOT subtype_exists THEN
         RAISE EXCEPTION
             'Electric bicycle % must have an electric bicycle record',
-            checked_bicycle_id;
+            checked_bicycle_id USING ERRCODE = '23514';
     END IF;
 
     IF checked_bicycle_type = 'regular'
        AND subtype_exists THEN
         RAISE EXCEPTION
             'Regular bicycle % cannot have an electric bicycle record',
-            checked_bicycle_id;
+            checked_bicycle_id USING ERRCODE = '23514';
     END IF;
 
     RETURN NULL;

@@ -1,6 +1,6 @@
 -- V010: Station and bicycle management operations.
 --
--- Requirements: F-017..F-021, F-026, F-028, F-031, F-032, F-033, F-035, F-036, F-037,
+-- Requirements: F-017..F-021, F-026, F-028..F-033, F-035..F-037, F-091, F-094..F-097,
 --               F-069, F-071, F-072, F-075.
 -- Style follows V006: SECURITY DEFINER, fixed search_path, acting account passed as p_actor_id.
 -- Error codes: 42501 not permitted, 22023 invalid input, 23505 duplicate identifier, P0002 not found.
@@ -27,7 +27,7 @@ END $$;
 
 -- Single definition of "rentable" (F-036 / F-040): at a station, serviceable, station
 -- rental-enabled, and for electric bicycles a battery reading of at least 20%.
--- Availability uses it now; rental start should use it later so the rules cannot drift apart.
+-- Shared by availability and the rental placement guard below.
 CREATE VIEW bicycle_rental.v_rentable_bicycle AS
 SELECT b.bicycle_id,
        b.bicycle_type,
@@ -41,6 +41,66 @@ SELECT b.bicycle_id,
    AND b.maintenance_state = 'serviceable'
    AND s.rental_enabled
    AND (b.bicycle_type = 'regular' OR eb.battery_percentage >= 20);
+
+-- Enforce station-side restrictions even for direct placement updates. The future rental
+-- module must still manage ownership, rental rows, prices and completion atomically.
+-- Locks serialize eligibility decisions against station controls and battery updates;
+-- the UPDATE already locks the bicycle against maintenance changes and competing moves.
+CREATE FUNCTION bicycle_rental.enforce_bicycle_rental_controls()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = bicycle_rental, public, pg_temp
+AS $$
+DECLARE
+    v_return_enabled boolean;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.placement = 'active_rental' THEN
+            -- F-026 permits privileged baseline imports of existing rentals. The setup
+            -- flag alone grants no privilege: require the login to have the table owner's
+            -- privileges too. session_user prevents a SECURITY DEFINER operation from
+            -- turning an ordinary application connection into a baseline loader.
+            IF current_setting('bicycle_rental.privileged_setup', true) = 'true'
+               AND pg_has_role(session_user,
+                   (SELECT c.relowner FROM pg_catalog.pg_class c WHERE c.oid = TG_RELID), 'USAGE') THEN
+                RETURN NEW; -- ordinary CHECKs, FKs and deferred subtype checks still apply
+            END IF;
+            RAISE EXCEPTION 'rental placement must start from an existing station bicycle' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF OLD.placement IS NOT DISTINCT FROM NEW.placement THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.placement = 'active_rental' THEN
+        IF OLD.placement <> 'station' OR NEW.maintenance_state <> 'serviceable' THEN
+            RAISE EXCEPTION 'only a serviceable station bicycle can start a rental' USING ERRCODE = '23514';
+        END IF;
+        PERFORM 1 FROM station WHERE station_id = OLD.current_station_id FOR SHARE;
+        IF OLD.bicycle_type = 'electric' THEN
+            PERFORM 1 FROM electric_bicycle WHERE bicycle_id = OLD.bicycle_id FOR SHARE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM v_rentable_bicycle WHERE bicycle_id = OLD.bicycle_id) THEN
+            RAISE EXCEPTION 'bicycle is not eligible for rental' USING ERRCODE = '23514';
+        END IF;
+    ELSIF OLD.placement = 'active_rental' THEN
+        IF NEW.placement <> 'station' THEN
+            RAISE EXCEPTION 'a rented bicycle must be returned to a station' USING ERRCODE = '23514';
+        END IF;
+        SELECT s.return_enabled INTO v_return_enabled
+          FROM station s WHERE s.station_id = NEW.current_station_id FOR SHARE;
+        IF NOT FOUND OR NOT v_return_enabled THEN
+            RAISE EXCEPTION 'rental destination must be an existing return-enabled station' USING ERRCODE = '23514';
+        END IF;
+    END IF;
+    -- Maintenance movements and staff station transfers do not use rider station controls.
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER trg_bicycle_rental_controls
+    BEFORE INSERT OR UPDATE ON bicycle_rental.bicycle
+    FOR EACH ROW EXECUTE FUNCTION bicycle_rental.enforce_bicycle_rental_controls();
 
 -- =====================================================================
 -- Stations
@@ -311,6 +371,125 @@ BEGIN
         audit_detail_json('Bicycle', p_bicycle_id, 'placement',          v_b.placement::text,         v_b.placement::text),
         audit_detail_json('Bicycle', p_bicycle_id, 'current_station_id', v_b.current_station_id,      v_b.current_station_id)));
     RETURN true;
+END $$;
+
+-- Provider administration (F-089/F-096/F-097). Provider changes are not among F-071's audited actions.
+CREATE FUNCTION bicycle_rental.create_maintenance_provider(
+    p_actor_id bigint, p_name text,
+    p_contact_email text DEFAULT NULL, p_contact_phone text DEFAULT NULL)
+RETURNS bigint
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = bicycle_rental, public, pg_temp
+AS $$
+DECLARE
+    v_id bigint;
+BEGIN
+    PERFORM require_staff(p_actor_id);
+    IF p_name IS NULL OR trim_ws(p_name) = '' THEN
+        RAISE EXCEPTION 'provider name is required' USING ERRCODE = '22023';
+    END IF;
+    INSERT INTO maintenance_provider (name, contact_email, contact_phone)
+    VALUES (trim_ws(p_name), nullif(trim_ws(p_contact_email), ''), nullif(trim_ws(p_contact_phone), ''))
+    RETURNING provider_id INTO v_id;
+    RETURN v_id;
+END $$;
+
+CREATE FUNCTION bicycle_rental.set_maintenance_provider_active(
+    p_actor_id bigint, p_provider_id bigint, p_is_active boolean)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = bicycle_rental, public, pg_temp
+AS $$
+DECLARE
+    v_active boolean;
+BEGIN
+    PERFORM require_staff(p_actor_id);
+    IF p_is_active IS NULL THEN
+        RAISE EXCEPTION 'provider active flag is required' USING ERRCODE = '22023';
+    END IF;
+    SELECT is_active INTO v_active FROM maintenance_provider WHERE provider_id = p_provider_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'provider % not found', p_provider_id USING ERRCODE = 'P0002';
+    END IF;
+    IF v_active = p_is_active THEN
+        RETURN false;
+    END IF;
+    UPDATE maintenance_provider SET is_active = p_is_active WHERE provider_id = p_provider_id;
+    RETURN true;
+END $$;
+
+-- F-029/F-094: only station bicycles may be handed to an active, existing provider.
+CREATE FUNCTION bicycle_rental.handover_to_maintenance(
+    p_actor_id bigint, p_bicycle_id bigint, p_provider_id bigint)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = bicycle_rental, public, pg_temp
+AS $$
+DECLARE
+    v_b bicycle%ROWTYPE;
+    v_active boolean;
+BEGIN
+    PERFORM require_staff(p_actor_id);
+    SELECT * INTO v_b FROM bicycle WHERE bicycle_id = p_bicycle_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'bicycle % not found', p_bicycle_id USING ERRCODE = 'P0002';
+    END IF;
+    IF v_b.placement <> 'station' THEN
+        RAISE EXCEPTION 'maintenance handover requires station placement' USING ERRCODE = '22023';
+    END IF;
+    SELECT is_active INTO v_active FROM maintenance_provider WHERE provider_id = p_provider_id FOR SHARE;
+    IF NOT FOUND OR NOT v_active THEN
+        RAISE EXCEPTION 'maintenance provider must exist and be active' USING ERRCODE = '22023';
+    END IF;
+
+    UPDATE bicycle
+       SET placement = 'maintenance_provider', current_station_id = NULL,
+           current_provider_id = p_provider_id, maintenance_state = 'unavailable_for_maintenance'
+     WHERE bicycle_id = p_bicycle_id;
+    PERFORM record_audit_event(p_actor_id, 'maintenance_handover', 'Bicycle', p_bicycle_id, jsonb_build_array(
+        audit_detail_json('Bicycle', p_bicycle_id, 'maintenance_state', v_b.maintenance_state::text, 'unavailable_for_maintenance'::text),
+        audit_detail_json('Bicycle', p_bicycle_id, 'placement', v_b.placement::text, 'maintenance_provider'::text),
+        audit_detail_json('Bicycle', p_bicycle_id, 'current_station_id', v_b.current_station_id, NULL::bigint),
+        audit_detail_json('Bicycle', p_bicycle_id, 'current_provider_id', v_b.current_provider_id, p_provider_id)));
+END $$;
+
+-- F-030/F-095: maintenance returns require an explicit state, but ignore rider station controls.
+-- Provider deactivation must not strand bicycles already held by that provider.
+CREATE FUNCTION bicycle_rental.return_from_maintenance(
+    p_actor_id bigint, p_bicycle_id bigint, p_station_id bigint,
+    p_maintenance_state bicycle_rental.maintenance_state)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = bicycle_rental, public, pg_temp
+AS $$
+DECLARE
+    v_b bicycle%ROWTYPE;
+BEGIN
+    PERFORM require_staff(p_actor_id);
+    IF p_maintenance_state IS NULL THEN
+        RAISE EXCEPTION 'maintenance state must be supplied' USING ERRCODE = '22023';
+    END IF;
+    SELECT * INTO v_b FROM bicycle WHERE bicycle_id = p_bicycle_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'bicycle % not found', p_bicycle_id USING ERRCODE = 'P0002';
+    END IF;
+    IF v_b.placement <> 'maintenance_provider' THEN
+        RAISE EXCEPTION 'maintenance return requires provider placement' USING ERRCODE = '22023';
+    END IF;
+    PERFORM 1 FROM station WHERE station_id = p_station_id FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'station % does not exist', p_station_id USING ERRCODE = '22023';
+    END IF;
+
+    UPDATE bicycle
+       SET placement = 'station', current_station_id = p_station_id,
+           current_provider_id = NULL, maintenance_state = p_maintenance_state
+     WHERE bicycle_id = p_bicycle_id;
+    PERFORM record_audit_event(p_actor_id, 'maintenance_return', 'Bicycle', p_bicycle_id, jsonb_build_array(
+        audit_detail_json('Bicycle', p_bicycle_id, 'maintenance_state', v_b.maintenance_state::text, p_maintenance_state::text),
+        audit_detail_json('Bicycle', p_bicycle_id, 'placement', v_b.placement::text, 'station'::text),
+        audit_detail_json('Bicycle', p_bicycle_id, 'current_station_id', v_b.current_station_id, p_station_id),
+        audit_detail_json('Bicycle', p_bicycle_id, 'current_provider_id', v_b.current_provider_id, NULL::bigint)));
 END $$;
 
 -- Core battery write, shared by update_battery and import_battery_readings (internal, no actor check).

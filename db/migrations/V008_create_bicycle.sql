@@ -2,6 +2,7 @@
 --
 -- Scope:
 --   * Creates the bicycle-related ENUM types.
+--   * Creates maintenance_provider and enforces provider placement references.
 --   * Creates bicycle and its constraints.
 --   * Enforces case-insensitive, whitespace-trimmed identifier uniqueness.
 --   * Prevents bicycle deletion and changes to identifier/bicycle_type.
@@ -20,7 +21,22 @@ CREATE TYPE bicycle_rental.maintenance_state AS ENUM (
     'unavailable_for_maintenance'
 );
 
--- 2. Bicycle table
+-- 2. Maintenance providers, required by the bicycle placement foreign key (F-091).
+CREATE TABLE bicycle_rental.maintenance_provider (
+    provider_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    contact_email TEXT,
+    contact_phone TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    CONSTRAINT chk_provider_name_not_blank
+        CHECK (bicycle_rental.trim_ws(name) <> '')
+);
+
+CREATE TRIGGER trg_maintenance_provider_no_delete
+    BEFORE DELETE ON bicycle_rental.maintenance_provider
+    FOR EACH ROW EXECUTE FUNCTION bicycle_rental.trg_forbid_delete();
+
+-- 3. Bicycle table
 CREATE TABLE bicycle_rental.bicycle (
     bicycle_id bigint NOT NULL GENERATED ALWAYS AS IDENTITY ( INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 ),
     identifier VARCHAR(100) NOT NULL,
@@ -43,6 +59,12 @@ CREATE TABLE bicycle_rental.bicycle (
         ON UPDATE NO ACTION
         ON DELETE NO ACTION,
 
+    CONSTRAINT bicycle_provider_id_fkey
+        FOREIGN KEY (current_provider_id)
+        REFERENCES bicycle_rental.maintenance_provider (provider_id)
+        ON UPDATE RESTRICT
+        ON DELETE RESTRICT,
+
     CONSTRAINT chk_bicycle_placement_maintenance_not_null
         CHECK (
             (placement = 'maintenance_provider')
@@ -59,11 +81,16 @@ CREATE TABLE bicycle_rental.bicycle (
         CHECK (bicycle_rental.trim_ws(identifier) <> '')
 );
 
--- 3. Identifier uniqueness after trimming whitespace and ignoring case.
+CREATE INDEX ix_bicycle_station ON bicycle_rental.bicycle (current_station_id)
+    WHERE current_station_id IS NOT NULL;
+CREATE INDEX ix_bicycle_provider ON bicycle_rental.bicycle (current_provider_id)
+    WHERE current_provider_id IS NOT NULL;
+
+-- 4. Identifier uniqueness after trimming whitespace and ignoring case.
 CREATE UNIQUE INDEX uq_bicycle_identifier
     ON bicycle_rental.bicycle (LOWER(bicycle_rental.trim_ws(identifier)));
 
--- 4. Prevent bicycle deletion and changes to immutable attributes.
+-- 5. Prevent bicycle deletion and changes to immutable attributes.
 CREATE FUNCTION bicycle_rental.bicycle_protect_immutable()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -75,6 +102,10 @@ BEGIN
 
     IF NEW.identifier IS DISTINCT FROM OLD.identifier THEN
         RAISE EXCEPTION 'Bicycle identifier cannot be changed';
+    END IF;
+
+    IF NEW.bicycle_id IS DISTINCT FROM OLD.bicycle_id THEN
+        RAISE EXCEPTION 'Bicycle identity cannot be changed' USING ERRCODE = '23514';
     END IF;
 
     IF NEW.bicycle_type IS DISTINCT FROM OLD.bicycle_type THEN

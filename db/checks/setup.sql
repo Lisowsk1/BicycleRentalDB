@@ -25,7 +25,10 @@ BEGIN
         RAISE EXCEPTION 'Flyway history contains a failed migration';
     END IF;
 
-    FOREACH expected_table IN ARRAY ARRAY['tariff', 'audit_entry', 'audit_detail']
+    FOREACH expected_table IN ARRAY ARRAY[
+        'tariff', 'audit_entry', 'audit_detail', 'account', 'rider', 'staff',
+        'station', 'bicycle', 'electric_bicycle', 'maintenance_provider'
+    ]
     LOOP
         IF NOT EXISTS (
             SELECT 1 FROM pg_class c
@@ -41,6 +44,8 @@ BEGIN
     FOR expected_enum IN
         SELECT * FROM (VALUES
             ('bicycle_type', ARRAY['regular', 'electric']::TEXT[]),
+            ('bicycle_placement', ARRAY['station', 'active_rental', 'maintenance_provider']::TEXT[]),
+            ('maintenance_state', ARRAY['serviceable', 'unavailable_for_maintenance']::TEXT[]),
             ('audit_action_type', ARRAY[
                 'rider_block', 'rider_unblock', 'station_create', 'station_update',
                 'maintenance_handover', 'maintenance_return',

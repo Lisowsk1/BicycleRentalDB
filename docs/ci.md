@@ -11,8 +11,9 @@ On pull requests, before starting Docker, the workflow runs a [migration history
 3. Apply every Flyway migration.
 4. Validate migration naming and checksums.
 5. Run migration again to confirm the completed history can be rerun.
-6. Show migration status and run [setup checks](../db/checks/setup.sql). These verify the project schema, successful migration history, the tariff and audit tables, all three enums and their ordered labels, and the two active seed tariffs (regular 2.50 and electric 4.50 PLN per 900 seconds). Failed migration history also fails the check. Update the expected values when a future migration intentionally changes the initial configuration.
-7. Show PostgreSQL logs on failure and remove the job's containers and volumes on completion.
+6. Show migration status and run [setup checks](../db/checks/setup.sql). These verify the project schema, successful migration history, account/fleet/tariff/audit tables, fleet and audit enum labels, and the two active seed tariffs (regular 2.50 and electric 4.50 PLN per 900 seconds). Failed migration history also fails the check. Update the expected values when a future migration intentionally changes the initial configuration.
+7. Run [fleet and station tests](../db/tests/fleet_station.sql), including uniqueness, subtype integrity, availability, rental/return placement restrictions, provider references, maintenance operations, authorization, and audit rollback. The script rolls back its fixtures and test-only triggers.
+8. Show PostgreSQL logs on failure and remove the job's containers and volumes on completion.
 
 The job has a ten-minute timeout, read-only repository permissions, and disposable database credentials defined in the workflow. No GitHub secrets or local `.env` file are required. A newer run cancels an older run for the same branch or pull request and event type.
 
@@ -55,9 +56,32 @@ To run the same SQL setup check in PowerShell using the container's configured u
 
 ```powershell
 Get-Content -Raw db/checks/setup.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
+Get-Content -Raw db/tests/fleet_station.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
 ```
 
 CI always starts with an empty database. It does not yet test upgrades with production data or implement application-level tests.
+
+## Fleet operation boundary
+
+The fleet migrations enforce rental eligibility and destination controls on bicycle placement
+transitions. A transition to `active_rental` requires a rentable station bicycle; a transition
+from `active_rental` requires an existing return-enabled station. Operational inserts into rental
+placement are rejected. F-026 permits privileged baseline imports: a login with the bicycle
+table owner's privileges may insert existing rental placement while
+`SET LOCAL bicycle_rental.privileged_setup = 'true'` is active in its import transaction.
+The flag alone grants no privilege. Structural CHECKs, FKs and electric subtype constraints still
+apply; when the rental module exists its corresponding rental rows must be loaded in the same
+transaction. Station and battery row locks protect operational checks against concurrent
+changes. Maintenance handover/return ignores rider station controls, as required by F-029/F-030.
+
+The rental lifecycle module is not implemented yet. Its future commands must manage rider
+eligibility, rental records, pricing and completion in the same transaction as bicycle placement.
+The fleet tests exercise the placement boundary directly; they do not claim to test rental
+ownership, charging or concurrent requests from separate database sessions.
+
+These unmerged fleet migrations were edited in place. If you already applied their old versions
+to a disposable local database, recreate that database using the documented local reset before
+running Flyway again. Existing databases are not upgraded automatically by changing migration files.
 
 ## Deployment
 
