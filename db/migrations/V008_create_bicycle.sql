@@ -26,7 +26,7 @@ ALTER TYPE bicycle_rental.maintenance_state OWNER TO bicycle_rental;
 
 -- 2. Bicycle table
 CREATE TABLE bicycle_rental.bicycle (
-    bicycle_id BIGINT NOT NULL,
+    bicycle_id bigint NOT NULL GENERATED ALWAYS AS IDENTITY ( INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 ),
     identifier VARCHAR(100) NOT NULL,
     bicycle_type bicycle_rental.bicycle_type NOT NULL,
     maintenance_state bicycle_rental.maintenance_state NOT NULL,
@@ -60,14 +60,14 @@ CREATE TABLE bicycle_rental.bicycle (
         ),
 
     CONSTRAINT chk_bicycle_identifier_not_blank
-        CHECK (BTRIM(identifier) <> '')
+        CHECK (bicycle_rental.trim_ws(identifier) <> '')
 );
 
 ALTER TABLE bicycle_rental.bicycle OWNER TO bicycle_rental;
 
 -- 3. Identifier uniqueness after trimming whitespace and ignoring case.
 CREATE UNIQUE INDEX uq_bicycle_identifier
-    ON bicycle_rental.bicycle (LOWER(BTRIM(identifier)));
+    ON bicycle_rental.bicycle (LOWER(bicycle_rental.trim_ws(identifier)));
 
 -- 4. Prevent bicycle deletion and changes to immutable attributes.
 CREATE FUNCTION bicycle_rental.bicycle_protect_immutable()

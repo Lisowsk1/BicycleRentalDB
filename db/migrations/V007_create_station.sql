@@ -5,7 +5,7 @@
 
 -- 1. Station table
 CREATE TABLE bicycle_rental.station (
-    station_id BIGINT NOT NULL,
+    station_id bigint NOT NULL GENERATED ALWAYS AS IDENTITY ( INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 ),
     name VARCHAR(100) NOT NULL,
     address VARCHAR(200) NOT NULL,
     latitude NUMERIC(10,7) NOT NULL,
@@ -24,8 +24,8 @@ CREATE TABLE bicycle_rental.station (
 
     CONSTRAINT chk_station_name_address
         CHECK (
-            BTRIM(name) <> ''
-            AND BTRIM(address) <> ''
+            bicycle_rental.trim_ws(name) <> ''
+            AND bicycle_rental.trim_ws(address) <> ''
         )
 );
 
