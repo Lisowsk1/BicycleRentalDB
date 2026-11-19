@@ -29,8 +29,6 @@ CREATE TABLE bicycle_rental.station (
         )
 );
 
-ALTER TABLE bicycle_rental.station OWNER TO bicycle_rental;
-
 -- 2. Prevent station deletion
 CREATE FUNCTION bicycle_rental.prevent_station_deletion()
 RETURNS TRIGGER
@@ -40,9 +38,6 @@ BEGIN
     RAISE EXCEPTION 'Deleting stations is prohibited';
 END;
 $function$;
-
-ALTER FUNCTION bicycle_rental.prevent_station_deletion()
-    OWNER TO bicycle_rental;
 
 CREATE TRIGGER trg_prevent_station_deletion
     BEFORE DELETE

@@ -15,14 +15,10 @@ CREATE TYPE bicycle_rental.bicycle_placement AS ENUM (
     'maintenance_provider'
 );
 
-ALTER TYPE bicycle_rental.bicycle_placement OWNER TO bicycle_rental;
-
 CREATE TYPE bicycle_rental.maintenance_state AS ENUM (
     'serviceable',
     'unavailable_for_maintenance'
 );
-
-ALTER TYPE bicycle_rental.maintenance_state OWNER TO bicycle_rental;
 
 -- 2. Bicycle table
 CREATE TABLE bicycle_rental.bicycle (
@@ -63,8 +59,6 @@ CREATE TABLE bicycle_rental.bicycle (
         CHECK (bicycle_rental.trim_ws(identifier) <> '')
 );
 
-ALTER TABLE bicycle_rental.bicycle OWNER TO bicycle_rental;
-
 -- 3. Identifier uniqueness after trimming whitespace and ignoring case.
 CREATE UNIQUE INDEX uq_bicycle_identifier
     ON bicycle_rental.bicycle (LOWER(bicycle_rental.trim_ws(identifier)));
@@ -90,9 +84,6 @@ BEGIN
     RETURN NEW;
 END;
 $function$;
-
-ALTER FUNCTION bicycle_rental.bicycle_protect_immutable()
-    OWNER TO bicycle_rental;
 
 CREATE TRIGGER trg_bicycle_protect_immutable
     BEFORE UPDATE OR DELETE

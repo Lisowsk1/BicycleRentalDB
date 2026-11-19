@@ -38,8 +38,6 @@ CREATE TABLE bicycle_rental.electric_bicycle (
         )
 );
 
-ALTER TABLE bicycle_rental.electric_bicycle OWNER TO bicycle_rental;
-
 -- 2. Subtype consistency check function
 CREATE FUNCTION bicycle_rental.check_electric_bicycle_subtype()
 RETURNS TRIGGER
@@ -90,9 +88,6 @@ BEGIN
     RETURN NULL;
 END;
 $function$;
-
-ALTER FUNCTION bicycle_rental.check_electric_bicycle_subtype()
-    OWNER TO bicycle_rental;
 
 -- 3. Deferred constraint triggers
 CREATE CONSTRAINT TRIGGER trg_electric_bicycle_check_subtype
