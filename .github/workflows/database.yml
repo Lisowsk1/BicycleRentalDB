@@ -60,6 +60,13 @@ jobs:
             --dbname "$POSTGRES_DB" \
             --set=ON_ERROR_STOP=1 < db/checks/setup.sql
 
+      - name: Test fleet and station constraints
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/fleet_station.sql
+
       - name: Show database logs on failure
         if: failure()
         run: docker compose logs --no-color db
