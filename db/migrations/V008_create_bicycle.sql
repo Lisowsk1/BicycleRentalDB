@@ -6,8 +6,6 @@
 --   * Enforces case-insensitive, whitespace-trimmed identifier uniqueness.
 --   * Prevents bicycle deletion and changes to identifier/bicycle_type.
 
-BEGIN;
-
 SET LOCAL search_path = bicycle_rental, public;
 
 -- 1. Bicycle ENUM types
@@ -18,13 +16,6 @@ CREATE TYPE bicycle_rental.bicycle_placement AS ENUM (
 );
 
 ALTER TYPE bicycle_rental.bicycle_placement OWNER TO bicycle_rental;
-
-CREATE TYPE bicycle_rental.bicycle_type AS ENUM (
-    'regular',
-    'electric'
-);
-
-ALTER TYPE bicycle_rental.bicycle_type OWNER TO bicycle_rental;
 
 CREATE TYPE bicycle_rental.maintenance_state AS ENUM (
     'serviceable',
@@ -108,5 +99,3 @@ CREATE TRIGGER trg_bicycle_protect_immutable
     ON bicycle_rental.bicycle
     FOR EACH ROW
     EXECUTE FUNCTION bicycle_rental.bicycle_protect_immutable();
-
-COMMIT;

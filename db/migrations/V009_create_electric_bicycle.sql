@@ -108,5 +108,3 @@ CREATE CONSTRAINT TRIGGER trg_bicycle_check_subtype
     DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW
     EXECUTE FUNCTION bicycle_rental.check_electric_bicycle_subtype();
-
-COMMIT;

@@ -3,8 +3,6 @@
 -- Creates the station table, validates station location/name fields,
 -- and prevents station deletion.
 
-BEGIN;
-
 -- 1. Station table
 CREATE TABLE bicycle_rental.station (
     station_id BIGINT NOT NULL,
@@ -52,4 +50,3 @@ CREATE TRIGGER trg_prevent_station_deletion
     FOR EACH ROW
     EXECUTE FUNCTION bicycle_rental.prevent_station_deletion();
 
-COMMIT;
