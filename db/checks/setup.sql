@@ -27,7 +27,7 @@ BEGIN
 
     FOREACH expected_table IN ARRAY ARRAY[
         'tariff', 'audit_entry', 'audit_detail', 'account', 'rider', 'staff',
-        'station', 'bicycle', 'electric_bicycle', 'maintenance_provider'
+        'station', 'bicycle', 'electric_bicycle', 'maintenance_provider', 'rental', 'payment'
     ]
     LOOP
         IF NOT EXISTS (

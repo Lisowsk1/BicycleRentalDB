@@ -261,6 +261,15 @@ BEGIN
     INSERT INTO bicycle (identifier, bicycle_type, maintenance_state, placement)
     VALUES (v_prefix || '-baseline-rental', 'regular', 'serviceable', 'active_rental')
     RETURNING bicycle_id INTO v_baseline;
+    INSERT INTO rental (
+        rider_id, bicycle_id, pickup_station_id, tariff_id,
+        captured_price_per_block, captured_block_length_seconds, captured_currency, bicycle_type
+    )
+    SELECT v_rider, v_baseline, v_station, t.tariff_id,
+           t.price_per_block, t.block_length_seconds, t.currency, 'regular'
+      FROM tariff t
+     WHERE t.bicycle_type = 'regular' AND t.is_active
+     LIMIT 1;
     PERFORM pg_temp.assert_true((SELECT placement = 'active_rental' AND current_station_id IS NULL FROM bicycle WHERE bicycle_id = v_baseline), 'privileged baseline accepts existing rental placement');
     PERFORM pg_temp.expect_error('23514', format('INSERT INTO bicycle (identifier, bicycle_type, maintenance_state, placement, current_station_id) VALUES (%L, ''regular'', ''serviceable'', ''active_rental'', %s)', v_prefix || '-bad-baseline', v_station), 'baseline import still enforces placement checks');
     PERFORM pg_temp.expect_error('23514', format('INSERT INTO bicycle (identifier, bicycle_type, maintenance_state, placement) VALUES (%L, ''electric'', ''serviceable'', ''active_rental'')', v_prefix || '-baseline-orphan'), 'baseline import still requires electric subtype');
