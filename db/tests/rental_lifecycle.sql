@@ -296,6 +296,20 @@ BEGIN
     PERFORM pg_temp.expect_error('22003', format('SELECT * FROM return_rental(%s, %s, %s)', v_r2, v_d.rental_id, v_b), 'charge overflow rejects the return');
     PERFORM pg_temp.assert_true((SELECT end_time IS NULL FROM rental WHERE rental_id = v_d.rental_id)
         AND (SELECT placement = 'active_rental' FROM bicycle WHERE bicycle_id = v_reg2), 'overflow leaves no partial return');
+
+    -- history paging (F-048)
+    PERFORM pg_temp.assert_true((SELECT count(*) >= 2 FROM rental WHERE rider_id = v_r2), 'paging fixture: rider has several rentals');
+    PERFORM pg_temp.assert_true((SELECT count(*) FROM get_rental_history(v_r2)) = (SELECT count(*) FROM rental WHERE rider_id = v_r2), 'default page returns all rentals of a small history');
+    PERFORM pg_temp.assert_true((SELECT count(*) = 1 FROM get_rental_history(v_r2, 1, 0)), 'limit 1 returns one rental');
+    PERFORM pg_temp.assert_true((SELECT rental_id FROM get_rental_history(v_r2, 1, 0))
+        = (SELECT rental_id FROM rental WHERE rider_id = v_r2 ORDER BY start_time DESC, rental_id DESC LIMIT 1), 'first page starts with the newest rental');
+    PERFORM pg_temp.assert_true((SELECT rental_id FROM get_rental_history(v_r2, 1, 1))
+        = (SELECT rental_id FROM rental WHERE rider_id = v_r2 ORDER BY start_time DESC, rental_id DESC LIMIT 1 OFFSET 1), 'offset 1 returns the second newest rental');
+    PERFORM pg_temp.assert_true((SELECT count(*) = 0 FROM get_rental_history(v_r2, 10, 1000)), 'offset past the end returns no rows');
+    PERFORM pg_temp.expect_error('22023', format('SELECT * FROM get_rental_history(%s, 0, 0)', v_r2), 'limit 0 is rejected');
+    PERFORM pg_temp.expect_error('22023', format('SELECT * FROM get_rental_history(%s, 201, 0)', v_r2), 'limit above 200 is rejected');
+    PERFORM pg_temp.expect_error('22023', format('SELECT * FROM get_rental_history(%s, 10, -1)', v_r2), 'negative offset is rejected');
+    PERFORM pg_temp.expect_error('22023', format('SELECT * FROM get_rental_history(%s, NULL, 0)', v_r2), 'NULL limit is rejected');
     SET CONSTRAINTS ALL IMMEDIATE;
 END $$;
 

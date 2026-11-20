@@ -355,18 +355,28 @@ BEGIN
 END $$;
 
 -- The rider's own rentals, newest first; empty when there is none (F-048).
-CREATE FUNCTION bicycle_rental.get_rental_history(p_actor_id bigint)
+-- Paged: at most p_limit rows (1..200), skipping p_offset.
+CREATE FUNCTION bicycle_rental.get_rental_history(
+    p_actor_id bigint,
+    p_limit    integer DEFAULT 50,
+    p_offset   integer DEFAULT 0)
 RETURNS SETOF bicycle_rental.rental_details
 LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = bicycle_rental, public, pg_temp
 AS $$
 BEGIN
     PERFORM require_rider(p_actor_id);
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 200
+       OR p_offset IS NULL OR p_offset < 0 THEN
+        RAISE EXCEPTION 'limit must be 1..200 and offset must not be negative'
+            USING ERRCODE = '22023';
+    END IF;
     RETURN QUERY
     SELECT (rental_details_for(r.rental_id)).*
       FROM rental r
      WHERE r.rider_id = p_actor_id
-     ORDER BY r.start_time DESC, r.rental_id DESC;
+     ORDER BY r.start_time DESC, r.rental_id DESC
+     LIMIT p_limit OFFSET p_offset;
 END $$;
 
 -- One rental by identity: the owning rider, or any staff member (F-082). Others get "not found".
