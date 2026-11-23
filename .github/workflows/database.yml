@@ -66,7 +66,11 @@ jobs:
             --username "$POSTGRES_USER" \
             --dbname "$POSTGRES_DB" \
             --set=ON_ERROR_STOP=1 < db/tests/fleet_station.sql
+<<<<<<< HEAD
 
+=======
+      
+>>>>>>> 0107bca78d261ac59be997211a7b46937ccfb39b
       - name: Test setup guards in a fresh connection
         run: |
           docker compose exec -T db psql \
@@ -85,6 +89,30 @@ jobs:
         run: |
           PSQL_CMD="docker compose exec -T db psql --username $POSTGRES_USER --dbname $POSTGRES_DB" \
             bash db/tests/rental_concurrency.sh
+
+      - name: Test payment processing
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/payment_processing_tests.sql
+
+      - name: Test committed payment recovery
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/payment_recovery_tests.sql
+
+      - name: Test concurrent payment requests and submissions
+        run: |
+          docker compose exec -T db sh -c \
+            'export PGUSER="$POSTGRES_USER" PGDATABASE="$POSTGRES_DB"; exec bash' \
+            < db/tests/payment_concurrency_test.sh
+<<<<<<< HEAD
+=======
+      
+>>>>>>> 0107bca78d261ac59be997211a7b46937ccfb39b
 
       - name: Show database logs on failure
         if: failure()
