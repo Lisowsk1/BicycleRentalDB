@@ -200,4 +200,7 @@ docker compose up -d --wait db
 docker compose run --rm flyway migrate
 ```
 
+See [simulated payment usage and recovery](docs/payments.md) for the payment procedure,
+transaction boundaries, and retry behavior.
+
 The [requirements specification](docs/latex) describes the planned project features.

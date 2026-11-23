@@ -1,5 +1,5 @@
--- V015: Payment processing tests. Runs in one transaction that ends with ROLLBACK.
--- Usage: psql -v ON_ERROR_STOP=1 -f V015_payment_processing_tests.sql
+-- Payment phase/constraint unit tests. All fixtures are rolled back.
+-- Public CALL transaction boundaries are tested in payment_recovery_tests.sql.
 
 BEGIN;
 SET LOCAL search_path = bicycle_rental, public;
@@ -50,6 +50,24 @@ AS $$
       JOIN bicycle_rental.payment p ON p.payment_id = e.payment_id
      WHERE p.payment_reference = p_ref
 $$;
+
+-- Unit-only composition of the two phases. This deliberately does not commit;
+-- production callers use CALL bicycle_rental.submit_payment in autocommit mode.
+CREATE FUNCTION pg_temp.submit_payment_for_test(p_actor bigint, p_ref uuid)
+RETURNS TABLE (payment_reference uuid, status bicycle_rental.payment_status,
+               amount numeric, currency varchar, uncertain boolean)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_submission record;
+BEGIN
+    SELECT * INTO v_submission FROM prepare_payment_submission(p_actor, p_ref);
+    IF v_submission.confirmation_available THEN
+        RETURN QUERY SELECT * FROM confirm_payment_submission(p_actor, p_ref);
+    ELSE
+        RETURN QUERY SELECT v_submission.payment_reference, v_submission.status,
+                            v_submission.amount, v_submission.currency, v_submission.uncertain;
+    END IF;
+END $$;
 
 DO $test$
 DECLARE
@@ -120,9 +138,9 @@ BEGIN
     ASSERT pg_temp.events(v_ok_ref) = 'requested', 'T2 repeated request adds no event';
 
     -- T3: success; resubmission returns the stored outcome without a new attempt
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_ok_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_ok_ref);
     ASSERT v_row.status = 'successful' AND NOT v_row.uncertain, 'T3 settles successfully';
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_ok_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_ok_ref);
     ASSERT v_row.status = 'successful', 'T3 resubmission returns stored outcome';
     SELECT count(*) INTO v_n FROM payment_simulator_record s WHERE s.payment_reference = v_ok_ref;
     ASSERT v_n = 1, 'T3 one simulator record';
@@ -131,13 +149,13 @@ BEGIN
     -- T4: lost response, retry recovers without a second settlement
     SELECT * INTO v_row FROM request_payment(v_rider_a, v_r_lost);
     v_lost_ref := v_row.payment_reference;
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_lost_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_lost_ref);
     ASSERT v_row.status = 'pending' AND v_row.uncertain, 'T4 lost response reported as uncertain';
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_lost_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_lost_ref);
     ASSERT v_row.status = 'successful' AND NOT v_row.uncertain, 'T4 retry recovers success';
     SELECT count(*) INTO v_n FROM payment_simulator_record s WHERE s.payment_reference = v_lost_ref;
     ASSERT v_n = 1, 'T4 one settlement';
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_lost_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_lost_ref);
     ASSERT pg_temp.events(v_lost_ref) =
         'requested,submission_attempted,submission_unconfirmed,submission_attempted,confirmed_successful',
         'T4 events';
@@ -145,7 +163,7 @@ BEGIN
     -- T5: unavailable simulator, adapter validation, later recovery
     SELECT * INTO v_row FROM request_payment(v_rider_a, v_r_unavail);
     v_ref := v_row.payment_reference;
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_ref);
     ASSERT v_row.status = 'pending' AND v_row.uncertain, 'T5 stays pending';
     SELECT count(*) INTO v_n FROM payment_simulator_record s WHERE s.payment_reference = v_ref;
     ASSERT v_n = 0, 'T5 nothing processed';
@@ -165,7 +183,7 @@ BEGIN
     UPDATE payment_simulator_scenario SET scenario = 'success' WHERE rental_id = v_r_unavail;
     PERFORM set_config('bicycle_rental.privileged_setup', 'false', true);
 
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_ref);
     ASSERT v_row.status = 'successful', 'T5 recovery';
 
     PERFORM apply_payment_confirmation(v_ref, v_r_unavail, 2.50, 'PLN', 'successful');
@@ -178,9 +196,9 @@ BEGIN
     -- T6: failed is terminal
     SELECT * INTO v_row FROM request_payment(v_rider_a, v_r_fail);
     v_ref := v_row.payment_reference;
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_ref);
     ASSERT v_row.status = 'failed', 'T6 failed';
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_ref);
     ASSERT v_row.status = 'failed', 'T6 stays failed';
     PERFORM pg_temp.expect_error(format(
         'SELECT apply_payment_confirmation(%L, %s, 2.50, %L, %L)', v_ref, v_r_fail, 'PLN', 'successful'), '23514');
@@ -216,8 +234,8 @@ BEGIN
     PERFORM pg_temp.expect_error(format('SELECT 1 FROM request_payment(%s, %s)', v_rider_a, 999999999), '42501');
     PERFORM pg_temp.expect_error(format('SELECT 1 FROM request_payment(%s, %s)', v_jan, v_jan_active), '23514');
     PERFORM pg_temp.expect_error(format('SELECT 1 FROM request_payment(%s, %s)', v_rider_a, v_r_zero), '23514');
-    PERFORM pg_temp.expect_error(format('SELECT 1 FROM submit_payment(%s, %L)', v_rider_b, v_ok_ref), '42501');
-    PERFORM pg_temp.expect_error(format('SELECT 1 FROM submit_payment(%s, %L)', v_staff, v_ok_ref), '42501');
+    PERFORM pg_temp.expect_error(format('SELECT 1 FROM pg_temp.submit_payment_for_test(%s, %L)', v_rider_b, v_ok_ref), '42501');
+    PERFORM pg_temp.expect_error(format('SELECT 1 FROM pg_temp.submit_payment_for_test(%s, %L)', v_staff, v_ok_ref), '42501');
     SELECT count(*) INTO v_n FROM payment p WHERE p.rental_id IN (v_r_zero, v_jan_active, v_r_none);
     ASSERT v_n = 0, 'T9 rejected requests create no payment data';
 
@@ -248,18 +266,21 @@ BEGIN
     -- T12: manual status override rejected
     SELECT * INTO v_row FROM request_payment(v_rider_a, v_r_manual);
     v_ref := v_row.payment_reference;
+    PERFORM pg_temp.expect_error(format('SELECT 1 FROM confirm_payment_submission(%s, %L)', v_rider_a, v_ref), '22023');
+    PERFORM pg_temp.expect_error(format('SELECT 1 FROM confirm_payment_submission(%s, %L)', v_rider_b, v_ref), '42501');
+    PERFORM pg_temp.expect_error(format('SELECT 1 FROM prepare_payment_submission(%s, %L)', v_rider_b, v_ref), '42501');
     PERFORM pg_temp.expect_error(format('UPDATE payment SET status = %L WHERE payment_reference = %L', 'successful', v_ref), '23514');
     PERFORM pg_temp.expect_error(format('UPDATE payment SET status = %L WHERE payment_reference = %L', 'failed', v_ref), '23514');
     SELECT * INTO v_row FROM get_rental_payment(v_rider_a, v_r_manual);
     ASSERT v_row.payment_status = 'pending', 'T12 still pending';
 
-    -- T13: confirmation-write failure: simulator settled, payment still pending, retry recovers
+    -- T13: replay an existing retained simulator result (unit test, no commit boundary)
     SELECT * INTO v_row FROM request_payment(v_rider_a, v_r_cwf);
     v_ref := v_row.payment_reference;
     ASSERT simulator_submit(v_ref, v_r_cwf, 2.50, 'PLN') = 'successful', 'T13 simulator settles';
     SELECT * INTO v_row FROM get_rental_payment(v_rider_a, v_r_cwf);
     ASSERT v_row.payment_status = 'pending', 'T13 payment still pending';
-    SELECT * INTO v_row FROM submit_payment(v_rider_a, v_ref);
+    SELECT * INTO v_row FROM pg_temp.submit_payment_for_test(v_rider_a, v_ref);
     ASSERT v_row.status = 'successful', 'T13 retry recovers';
     SELECT count(*) INTO v_n FROM payment_simulator_record s WHERE s.payment_reference = v_ref;
     ASSERT v_n = 1, 'T13 no second settlement';
@@ -279,12 +300,12 @@ BEGIN
     SELECT count(*) INTO v_n FROM payment_event;
     ASSERT v_n = v_events_before, 'T14 events rolled back';
 
-    -- T15: rollback of a failed submission leaves payment pending, no simulator record, no event
+    -- T15: an uncommitted lower-level settlement phase can be rolled back before it settles
     SELECT * INTO v_row FROM request_payment(v_rider_a, v_r_rb2);
     v_ref := v_row.payment_reference;
     SELECT count(*) INTO v_events_before FROM payment_event;
     BEGIN
-        PERFORM submit_payment(v_rider_a, v_ref);
+        PERFORM prepare_payment_submission(v_rider_a, v_ref);
         RAISE EXCEPTION 'forced failure';
     EXCEPTION WHEN OTHERS THEN
         IF SQLERRM <> 'forced failure' THEN
@@ -320,7 +341,7 @@ BEGIN
        AND NOT EXISTS (SELECT 1 FROM payment_simulator_record s WHERE s.payment_reference = p.payment_reference);
     ASSERT v_n = 0, 'T17 terminal payments have simulator results';
 
-    RAISE NOTICE 'V015: all payment tests passed';
+    RAISE NOTICE 'All payment phase and constraint tests passed';
 END $test$;
 
 ROLLBACK;

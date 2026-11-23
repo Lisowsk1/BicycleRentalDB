@@ -67,6 +67,26 @@ jobs:
             --dbname "$POSTGRES_DB" \
             --set=ON_ERROR_STOP=1 < db/tests/fleet_station.sql
 
+      - name: Test payment processing
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/payment_processing_tests.sql
+
+      - name: Test committed payment recovery
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/payment_recovery_tests.sql
+
+      - name: Test concurrent payment requests and submissions
+        run: |
+          docker compose exec -T db sh -c \
+            'export PGUSER="$POSTGRES_USER" PGDATABASE="$POSTGRES_DB"; exec bash' \
+            < db/tests/payment_concurrency_test.sh
+
       - name: Show database logs on failure
         if: failure()
         run: docker compose logs --no-color db

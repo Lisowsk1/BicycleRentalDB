@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# V016: Concurrent payment requests and submissions, using parallel psql sessions.
-# Commits data: run against a disposable database with V001..V014 applied.
-# Usage: PGDATABASE=rental_test [PGUSER=... PGHOST=...] ./V016_payment_concurrency_test.sh
+# Concurrent public payment calls, using separate autocommit psql sessions.
+# Commits data: run against a disposable database with all migrations applied.
+# Usage: PGDATABASE=rental_test [PGUSER=... PGHOST=...] bash db/tests/payment_concurrency_test.sh
 set -euo pipefail
 
 N=${N:-20}
@@ -57,19 +57,24 @@ REF1=$(head -1 "$TMP/c1.1")
 check "C1 requested events" "$(count "bicycle_rental.payment_event e JOIN bicycle_rental.payment p USING (payment_id) WHERE p.payment_reference = '$REF1' AND e.event_type = 'requested'")" 1
 
 # C2: concurrent submissions of one payment settle once
-parallel c2 "SELECT status FROM bicycle_rental.submit_payment($RIDER, '$REF1')"
-check "C2 successful responses" "$(cat "$TMP"/c2.? "$TMP"/c2.?? 2>/dev/null | grep -c '^successful$')" "$N"
+parallel c2 "CALL bicycle_rental.submit_payment($RIDER, '$REF1')"
+check "C2 successful responses" "$(cat "$TMP"/c2.? "$TMP"/c2.?? 2>/dev/null | grep -c '^successful|f$')" "$N"
 check "C2 simulator records" "$(count "bicycle_rental.payment_simulator_record WHERE payment_reference = '$REF1'")" 1
-check "C2 attempts" "$(count "bicycle_rental.payment_event e JOIN bicycle_rental.payment p USING (payment_id) WHERE p.payment_reference = '$REF1' AND e.event_type = 'submission_attempted'")" 1
+# More than one caller can observe pending between the settlement and confirmation
+# commits. These are retries of the same retained settlement, not new charges.
+ATTEMPTS=$(count "bicycle_rental.payment_event e JOIN bicycle_rental.payment p USING (payment_id) WHERE p.payment_reference = '$REF1' AND e.event_type = 'submission_attempted'")
+[ "$ATTEMPTS" -ge 1 ] && [ "$ATTEMPTS" -le "$N" ] || fail "C2 invalid attempt count: $ATTEMPTS"
+parallel c2terminal "CALL bicycle_rental.submit_payment($RIDER, '$REF1')"
+check "C2 terminal retries add no attempts" "$(count "bicycle_rental.payment_event e JOIN bicycle_rental.payment p USING (payment_id) WHERE p.payment_reference = '$REF1' AND e.event_type = 'submission_attempted'")" "$ATTEMPTS"
 check "C2 confirmations" "$(count "bicycle_rental.payment_event e JOIN bicycle_rental.payment p USING (payment_id) WHERE p.payment_reference = '$REF1' AND e.event_type = 'confirmed_successful'")" 1
 
 # C3: concurrent submissions with a lost first response: one uncertain answer, one settlement, final success
 R3=$(new_rental)
 set_scenario "$R3" success_lost_response
 REF3=$(q "SELECT payment_reference FROM bicycle_rental.request_payment($RIDER, $R3)")
-parallel c3 "SELECT status FROM bicycle_rental.submit_payment($RIDER, '$REF3')"
-check "C3 pending responses" "$(cat "$TMP"/c3.? "$TMP"/c3.?? 2>/dev/null | grep -c '^pending$')" 1
-check "C3 successful responses" "$(cat "$TMP"/c3.? "$TMP"/c3.?? 2>/dev/null | grep -c '^successful$')" "$((N - 1))"
+parallel c3 "CALL bicycle_rental.submit_payment($RIDER, '$REF3')"
+check "C3 pending responses" "$(cat "$TMP"/c3.? "$TMP"/c3.?? 2>/dev/null | grep -c '^pending|t$')" 1
+check "C3 successful responses" "$(cat "$TMP"/c3.? "$TMP"/c3.?? 2>/dev/null | grep -c '^successful|f$')" "$((N - 1))"
 check "C3 simulator records" "$(count "bicycle_rental.payment_simulator_record WHERE payment_reference = '$REF3'")" 1
 check "C3 final status" "$(q "SELECT status FROM bicycle_rental.payment WHERE payment_reference = '$REF3'")" successful
 
@@ -77,8 +82,8 @@ check "C3 final status" "$(q "SELECT status FROM bicycle_rental.payment WHERE pa
 R4=$(new_rental)
 set_scenario "$R4" failure
 REF4=$(q "SELECT payment_reference FROM bicycle_rental.request_payment($RIDER, $R4)")
-parallel c4 "SELECT status FROM bicycle_rental.submit_payment($RIDER, '$REF4')"
-check "C4 failed responses" "$(cat "$TMP"/c4.? "$TMP"/c4.?? 2>/dev/null | grep -c '^failed$')" "$N"
+parallel c4 "CALL bicycle_rental.submit_payment($RIDER, '$REF4')"
+check "C4 failed responses" "$(cat "$TMP"/c4.? "$TMP"/c4.?? 2>/dev/null | grep -c '^failed|f$')" "$N"
 check "C4 simulator records" "$(count "bicycle_rental.payment_simulator_record WHERE payment_reference = '$REF4'")" 1
 check "C4 final status" "$(q "SELECT status FROM bicycle_rental.payment WHERE payment_reference = '$REF4'")" failed
 
@@ -87,7 +92,7 @@ R5=$(new_rental)
 REF5=$(q "SELECT payment_reference FROM bicycle_rental.request_payment($RIDER, $R5)")
 for i in $(seq "$N"); do
     $PSQL -c "SELECT payment_reference FROM bicycle_rental.request_payment($RIDER, $R5)" > "$TMP/c5r.$i" 2>>"$TMP/c5.err" &
-    $PSQL -c "SELECT status FROM bicycle_rental.submit_payment($RIDER, '$REF5')" > "$TMP/c5s.$i" 2>>"$TMP/c5.err" &
+    $PSQL -c "CALL bicycle_rental.submit_payment($RIDER, '$REF5')" > "$TMP/c5s.$i" 2>>"$TMP/c5.err" &
 done
 wait
 [ ! -s "$TMP/c5.err" ] || fail "C5 errors: $(head -3 "$TMP/c5.err")"
@@ -95,4 +100,4 @@ check "C5 payments" "$(count "bicycle_rental.payment WHERE rental_id = $R5")" 1
 check "C5 simulator records" "$(count "bicycle_rental.payment_simulator_record WHERE payment_reference = '$REF5'")" 1
 check "C5 final status" "$(q "SELECT status FROM bicycle_rental.payment WHERE payment_reference = '$REF5'")" successful
 
-echo "V016: all payment concurrency tests passed (N=$N)"
+echo "All payment concurrency tests passed (N=$N)"
