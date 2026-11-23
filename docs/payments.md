@@ -12,7 +12,7 @@ SELECT * FROM bicycle_rental.request_payment(42, 123);
 Commit this request before submitting. It returns the stable payment reference,
 status, amount, and currency. Repeating it returns the same payment/reference.
 
-Starting with migration V015, submission is a **procedure**, replacing the previous
+Starting with migration V017, submission is a **procedure**, replacing the previous
 `SELECT ... FROM submit_payment(...)` function. In an autocommit connection, call:
 
 ```sql

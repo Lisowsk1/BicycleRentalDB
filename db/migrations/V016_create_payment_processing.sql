@@ -1,4 +1,4 @@
--- V014: Simulated payment processing, payment-state management and recovery.
+-- V016: Simulated payment processing, payment-state management and recovery.
 -- Requirements: F-058..F-068, F-114.
 
 SET LOCAL search_path = bicycle_rental, public;

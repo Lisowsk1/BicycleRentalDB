@@ -1,0 +1,303 @@
+erDiagram
+    %% Table-level constraints and indexes from Lucid appear below their tables as source comments.
+    %% ==========================================
+    %% GROUP 1: ACCOUNTS, RENTALS & BILLING
+    %% ==========================================
+    Account {
+        bigint account_id PK
+        varchar first_name
+        varchar last_name
+        varchar email "UQ: LOWER(TRIM(email))"
+        varchar password_hash
+        enum role "rider | staff, immutable"
+    }
+    %% UQ: LOWER(TRIM(email))
+    %% UQ (account_id, role)
+    %% CHECK: TRIM(first_name) <> '' AND TRIM(last_name) <> ''
+    %% CHECK: TRIM(email) <> '' AND password_hash <> ''
+    %% CONSTRAINT: mandatory atomic subtype (role = 'rider' -> Rider, role = 'staff' -> Staff)
+    %% CONSTRAINT: role is immutable after creation; operational DELETE is prohibited
+
+    Rider {
+        bigint account_id PK, FK
+        enum status "active | blocked"
+        varchar block_reason "nullable"
+        enum role "rider"
+    }
+    %% FK (account_id, role) -> Account (account_id, role)
+    %% CHECK: role = 'rider'
+    %% CHECK: status = 'blocked' OR block_reason IS NULL
+
+    Staff {
+        bigint account_id PK, FK
+        enum role "staff"
+    }
+    %% CHECK: role = 'staff'
+    %% FK (account_id, role) -> Account (account_id, role)
+
+    Tariff {
+        bigint tariff_id PK
+        enum bicycle_type "regular | electric"
+        decimal price_per_block "decimal(12,2)"
+        integer block_length_seconds
+        varchar currency
+        boolean is_active
+    }
+    %% UQ (tariff_id, bicycle_type)
+    %% IDX UNIQUE: (bicycle_type) WHERE is_active = true
+    %% CHECK: price_per_block >= 0 AND block_length_seconds > 0 AND TRIM(currency) <> ''
+    %% CONSTRAINT: active 'regular' and 'electric' tariffs must both exist and share the same currency
+    %% CONSTRAINT: operational INSERT, UPDATE, and DELETE are prohibited (modifiable only via privileged setup)
+
+    Rental {
+        bigint rental_id PK
+        bigint rider_id FK
+        bigint bicycle_id FK
+        bigint pickup_station_id FK
+        bigint return_station_id FK "nullable"
+        bigint tariff_id FK
+        UTC_timestamp start_time
+        UTC_timestamp end_time "nullable"
+        decimal captured_price_per_block "decimal(12,2)"
+        integer captured_block_length_seconds
+        varchar captured_currency
+        decimal final_charge "decimal(18,2), nullable"
+        bigint returned_by_staff_id FK "nullable"
+        enum bicycle_type FK "regular | electric"
+    }
+    %% UQ (rental_id, bicycle_id).
+    %% UQ (rental_id, rider_id, final_charge, captured_currency).
+    %% IDX UNIQUE (rider_id) WHERE end_time IS NULL.
+    %% IDX UNIQUE (bicycle_id) WHERE end_time IS NULL.
+    %% IDX: (rider_id, start_time
+    %% The preceding index annotation is incomplete in both Lucid exports.
+    %% IDX: (pickup_station_id, return_station_id) WHERE end_time IS NOT NULL
+    %% CHECK: (end_time IS NULL AND return_station_id IS NULL AND final_charge IS NULL) OR (end_time IS NOT NULL AND return_station_id IS NOT NULL AND final_charge IS NOT NULL)
+    %% CHECK active => returned_by_staff_id IS NULL; completed => end_time >= start_time.
+    %% CHECK: captured_price_per_block >= 0, captured_block_length_seconds > 0, TRIM(captured_currency) <> '', (final_charge >= 0 when present)
+    %% FK (bicycle_id, bicycle_type) -> Bicycle (bicycle_id, bicycle_type)
+    %% FK (tariff_id, bicycle_type) -> Tariff (tariff_id, bicycle_type)
+    %% CONSTRAINT: rider_id, bicycle_id, pickup_station_id, tariff_id, bicycle_type, start_time, and captured pricing fields are immutable after creation
+    %% CONSTRAINT: once completed (end_time IS NOT NULL), return_station_id, end_time, final_charge, and returned_by_staff_id are immutable
+
+    Payment {
+        bigint payment_id PK
+        bigint rental_id FK, UK
+        bigint rider_id FK
+        decimal amount "decimal(18,2)"
+        varchar currency
+        enum status "pending | successful | failed"
+        UTC_timestamp created_at
+        UTC_timestamp updated_at
+    }
+    %% CHECK: amount > 0 AND TRIM(currency) <> ''
+    %% CHECK: updated_at >= created_at
+    %% IDX: (rider_id)
+    %% FK (rental_id, rider_id, amount, currency) -> Rental (rental_id, rider_id, final_charge, captured_currency)
+    %% CONSTRAINT: status transitions allowed only from 'pending' -> 'successful' or 'pending' -> 'failed' ('successful' and 'failed' are terminal)
+    %% CONSTRAINT: rental_id, rider_id, amount, currency, and created_at are immutable after creation; operational DELETE is prohibited
+
+    %% ==========================================
+    %% GROUP 2: FLEET, STATIONS & TRANSFERS
+    %% ==========================================
+    Station {
+        bigint station_id PK
+        varchar name
+        varchar address
+        decimal latitude "decimal(10,7)"
+        decimal longitude "decimal(10,7)"
+        boolean rental_enabled
+        boolean return_enabled
+    }
+    %% CHECK: latitude BETWEEN -90 AND 90, longitude BETWEEN -180 AND 180
+    %% CHECK: TRIM(name) <> '' AND TRIM(address) <> ''
+    %% CONSTRAINT: operational DELETE is prohibited
+
+    Bicycle {
+        bigint bicycle_id PK
+        varchar identifier "UQ: LOWER(TRIM(identifier))"
+        enum bicycle_type "regular | electric"
+        enum maintenance_state "serviceable | unavailable_for_maintenance"
+        enum placement "station | active_rental | maintenance_provider"
+        bigint current_station_id FK "nullable"
+        bigint current_provider_id FK "nullable"
+    }
+    %% UQ: LOWER(TRIM(identifier))
+    %% UQ: (bicycle_id, bicycle_type)
+    %% CHECK (placement='maintenance_provider') iff current_provider_id IS NOT NULL.
+    %% CHECK (placement='station') iff current_station_id IS NOT NULL.
+    %% CHECK: TRIM(identifier) <> ''
+    %% IDX: (current_station_id, placement, maintenance_state, bicycle_type)
+    %% CONSTRAINT: mandatory atomic subtype (bicycle_type = 'electric' -> ElectricBicycle)
+    %% CONSTRAINT: (placement = 'active_rental') IFF EXISTS active Rental (end_time IS NULL)
+    %% CONSTRAINT: identifier and bicycle_type are immutable; operational DELETE is prohibited
+    %% CONSTRAINT: on transition to placement = 'maintenance_provider' or change of current_provider_id, referenced MaintenanceProvider must have is_active = true
+
+    ElectricBicycle {
+        bigint bicycle_id PK, FK
+        smallint battery_percentage "nullable, 0-100"
+        enum bicycle_type "electric"
+    }
+    %% CHECK: bicycle_type = 'electric'
+    %% CHECK: battery_percentage IS NULL OR (battery_percentage BETWEEN 0 AND 100)
+    %% FK (bicycle_id, bicycle_type) -> Bicycle (bicycle_id, bicycle_type)
+
+    MaintenanceProvider {
+        bigint provider_id PK
+        varchar name
+        varchar contact_email "nullable"
+        varchar contact_phone "nullable"
+        boolean is_active "default: true"
+    }
+    %% DEFAULT: is_active = true
+    %% CHECK: TRIM(name) <> ''
+    %% CONSTRAINT: operational DELETE is prohibited
+
+    BicycleTransfer {
+        bigint transfer_id PK
+        bigint bicycle_id FK
+        bigint from_station_id FK
+        bigint to_station_id FK
+        bigint performed_by_staff_id FK
+        UTC_timestamp transferred_at
+        varchar reason "nullable"
+    }
+    %% CHECK: from_station_id <> to_station_id
+    %% IDX: (bicycle_id, transferred_at)
+    %% CONSTRAINT: on insert, from_station_id must equal Bicycle.current_station_id (with placement = 'station')
+    %% CONSTRAINT: append-only (operational UPDATE and DELETE are prohibited)
+
+    %% ==========================================
+    %% GROUP 3: FAULTS, MAINTENANCE & AUDIT
+    %% ==========================================
+    FaultReport {
+        bigint report_id PK
+        bigint bicycle_id FK
+        bigint reported_by_account_id FK
+        bigint rental_id FK "nullable"
+        bigint maintenance_job_id FK "nullable"
+        enum category "brakes | tyres | drivetrain | battery | electrical | other"
+        enum severity "minor | major | critical"
+        text description
+        enum status "open | resolved | rejected"
+        UTC_timestamp reported_at
+        UTC_timestamp resolved_at "nullable"
+    }
+    %% CHECK: TRIM(description) <> ''
+    %% CHECK: resolved_at IS NULL OR resolved_at >= reported_at
+    %% CHECK: resolved_at IS NOT NULL IFF status = 'resolved'
+    %% IDX: (bicycle_id, status)
+    %% FK (rental_id, bicycle_id) -> Rental (rental_id, bicycle_id)
+    %% FK (maintenance_job_id, bicycle_id) -> MaintenanceJob (job_id, bicycle_id)
+    %% CONSTRAINT: if reported_by_account_id has role = 'rider' and rental_id IS NOT NULL, Rental.rider_id must equal reported_by_account_id
+    %% CONSTRAINT: bicycle_id, reported_by_account_id, and reported_at are immutable after creation
+
+    MaintenanceJob {
+        bigint job_id PK
+        bigint bicycle_id FK
+        bigint provider_id FK "nullable"
+        bigint assigned_staff_id FK "nullable"
+        enum status "open | in_progress | completed | cancelled"
+        UTC_timestamp opened_at
+        UTC_timestamp started_at "nullable"
+        UTC_timestamp closed_at "nullable"
+        text resolution "nullable"
+    }
+    %% UQ: (job_id, bicycle_id)
+    %% IDX UNIQUE: (bicycle_id) WHERE status IN ('open', 'in_progress')
+    %% CHECK: (status = 'open' AND started_at IS NULL) OR (status = 'in_progress' AND started_at IS NOT NULL) OR (status IN ('completed', 'cancelled'))
+    %% CHECK: closed_at IS NOT NULL IFF status IN ('completed', 'cancelled')
+    %% CHECK: started_at IS NULL OR closed_at IS NULL OR closed_at >= started_at
+    %% CHECK: started_at IS NULL OR started_at >= opened_at
+    %% CHECK: (resolution IS NOT NULL AND TRIM(resolution) <> '') IFF status IN ('completed', 'cancelled')
+    %% CONSTRAINT: status = 'completed' requires all child MaintenanceTask rows to have completed_at IS NOT NULL
+    %% CONSTRAINT: 'completed' and 'cancelled' are terminal states; bicycle_id and opened_at are immutable
+    %% CONSTRAINT: on insert or provider_id change, referenced MaintenanceProvider must have is_active = true
+    %% CONSTRAINT: on transition to 'completed' or 'cancelled', closed_at must be >= MAX(completed_at) of all child MaintenanceTask rows
+
+    MaintenanceTask {
+        bigint maintenance_job_id PK, FK
+        integer task_no PK
+        enum task_type "inspection | repair | battery_check | test"
+        text description
+        text outcome "nullable"
+        UTC_timestamp completed_at "nullable"
+    }
+    %% CHECK: task_no > 0
+    %% CHECK: TRIM(description) <> ''
+    %% CHECK: outcome and completed_at both NULL or both NOT NULL
+    %% CONSTRAINT: completed_at >= parent MaintenanceJob.opened_at
+    %% CONSTRAINT: tasks cannot be inserted, updated, or deleted once parent MaintenanceJob is 'completed' or 'cancelled'
+
+    AuditEntry {
+        bigint audit_id PK
+        bigint staff_id FK
+        enum action_type "rider_block | rider_unblock | station_create | station_update | maintenance_handover | maintenance_return | maintenance_state_update | staff_return"
+        enum primary_record_type "Rider | Bicycle | Station | Rental"
+        bigint primary_record_id
+        UTC_timestamp created_at
+    }
+    %% IDX: (created_at DESC)
+    %% IDX: (staff_id, created_at DESC)
+    %% IDX: (action_type, created_at DESC)
+    %% IDX: (primary_record_type, primary_record_id, created_at DESC)
+    %% CONSTRAINT: mandatory 1..* child AuditDetail rows (at least one detail required atomically on insert)
+    %% CONSTRAINT: primary_record_id must reference an existing row in the table matching primary_record_type
+    %% CONSTRAINT: append-only (operational UPDATE and DELETE are prohibited)
+
+    AuditDetail {
+        bigint audit_id PK, FK
+        integer detail_no PK
+        enum subject_record_type "Rider | Bicycle | Station | Rental"
+        bigint subject_record_id
+        varchar field_name
+        json previous_value "nullable"
+        json new_value "nullable"
+    }
+    %% CHECK: detail_no > 0
+    %% CHECK: TRIM(field_name) <> ''
+    %% CONSTRAINT: subject_record_id must reference an existing row in the table matching subject_record_type
+    %% CONSTRAINT: authentication secrets (passwords, password_hash, tokens) excluded from previous_value and new_value
+    %% CONSTRAINT: append-only (operational UPDATE and DELETE are prohibited)
+
+    %% ==========================================
+    %% RELATIONSHIPS (CROW'S FOOT)
+    %% ==========================================
+    %% Accounts & Subtypes
+    Account ||--o| Rider : "Is a"
+    Account ||--o| Staff : "Is a"
+
+    %% Bicycle subtypes and locations
+    Bicycle ||--o| ElectricBicycle : "Is a"
+    Station |o--o{ Bicycle : "Is At"
+    MaintenanceProvider |o--o{ Bicycle : "Currently Has"
+
+    %% Rentals & Billing
+    Rider ||--o{ Rental : "rents"
+    Bicycle ||--o{ Rental : "Rents a"
+    Tariff ||--o{ Rental : "Used Tariff"
+    Station ||--o{ Rental : "Starts At"
+    Station |o--o{ Rental : "Ends At"
+    Staff ||--o{ Rental : "Assists in"
+    Rental ||--o| Payment : "Paid with"
+    Rider ||--o{ Payment : "Paid By"
+
+    %% Transfers
+    Bicycle ||--o{ BicycleTransfer : "Moved"
+    Station ||--o{ BicycleTransfer : "From"
+    Station ||--o{ BicycleTransfer : "To"
+    Staff ||--o{ BicycleTransfer : "Performed By"
+
+    %% Faults & Maintenance
+    Account ||--o{ FaultReport : "reported by"
+    Bicycle ||--o{ FaultReport : "About"
+    Rental |o--|| FaultReport : "Filed during"
+    MaintenanceJob |o--o| FaultReport : "Linked to"
+    Bicycle ||--o{ MaintenanceJob : "Maintainance Of"
+    MaintenanceProvider |o--o{ MaintenanceJob : "Given To"
+    Staff ||--o{ MaintenanceJob : "Assigned to"
+    MaintenanceJob ||--o{ MaintenanceTask : "Features"
+
+    %% Audit
+    Staff ||--o{ AuditEntry : "Performed By"
+    AuditEntry ||--|{ AuditDetail : "Details"

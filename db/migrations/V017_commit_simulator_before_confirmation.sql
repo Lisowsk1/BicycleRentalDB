@@ -1,4 +1,4 @@
--- V015: Commit simulator settlement before applying application confirmation.
+-- V017: Commit simulator settlement before applying application confirmation.
 -- The public submission entry point is now CALL submit_payment(...), in autocommit
 -- mode. A function cannot provide the required transaction boundary (F-059/F-064).
 
