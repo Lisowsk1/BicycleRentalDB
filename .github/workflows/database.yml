@@ -67,6 +67,13 @@ jobs:
             --dbname "$POSTGRES_DB" \
             --set=ON_ERROR_STOP=1 < db/tests/fleet_station.sql
 
+      - name: Test setup guards in a fresh connection
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/setup_guards.sql
+
       - name: Test rental lifecycle
         run: |
           docker compose exec -T db psql \
