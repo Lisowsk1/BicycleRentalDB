@@ -27,7 +27,8 @@ BEGIN
 
     FOREACH expected_table IN ARRAY ARRAY[
         'tariff', 'audit_entry', 'audit_detail', 'account', 'rider', 'staff',
-        'station', 'bicycle', 'electric_bicycle', 'maintenance_provider', 'rental', 'payment'
+        'station', 'bicycle', 'electric_bicycle', 'maintenance_provider', 'rental', 'payment',
+        'maintenance_job', 'maintenance_task', 'fault_report'
     ]
     LOOP
         IF NOT EXISTS (
@@ -51,7 +52,12 @@ BEGIN
                 'maintenance_handover', 'maintenance_return',
                 'maintenance_state_update', 'staff_return'
             ]::TEXT[]),
-            ('audit_record_type', ARRAY['Rider', 'Bicycle', 'Station', 'Rental']::TEXT[])
+            ('audit_record_type', ARRAY['Rider', 'Bicycle', 'Station', 'Rental']::TEXT[]),
+            ('fault_category', ARRAY['brakes', 'tyres', 'drivetrain', 'battery', 'electrical', 'other']::TEXT[]),
+            ('fault_severity', ARRAY['minor', 'major', 'critical']::TEXT[]),
+            ('fault_status', ARRAY['open', 'resolved', 'rejected']::TEXT[]),
+            ('maintenance_job_status', ARRAY['open', 'in_progress', 'completed', 'cancelled']::TEXT[]),
+            ('maintenance_task_type', ARRAY['inspection', 'repair', 'battery_check', 'test']::TEXT[])
         ) AS expected(type_name, labels)
     LOOP
         SELECT array_agg(e.enumlabel::TEXT ORDER BY e.enumsortorder)
