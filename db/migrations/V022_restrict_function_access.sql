@@ -63,6 +63,9 @@ BEGIN
 END
 $$;
 
+GRANT EXECUTE ON PROCEDURE bicycle_rental.submit_payment(bigint, uuid, bicycle_rental.payment_status, boolean)
+    TO bicycle_app;
+    
 -- 4. Staff provisioning is a setup-administrator operation: it is not available to bicycle_app.
 --    Only the owner/superuser and members of bicycle_setup can create staff accounts.
 DO $$

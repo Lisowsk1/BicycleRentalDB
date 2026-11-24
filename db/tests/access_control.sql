@@ -69,6 +69,7 @@ BEGIN
         'bicycle_app can execute every operation function');
     PERFORM pg_temp.assert_true(NOT EXISTS (SELECT 1 FROM pg_proc p
         WHERE p.pronamespace = 'bicycle_rental'::regnamespace
+          AND p.proname <> 'submit_payment'
           AND (NOT p.prosecdef OR p.prorettype = 'trigger'::regtype)
           AND has_function_privilege('bicycle_app', p.oid, 'EXECUTE')),
         'bicycle_app cannot execute helpers, trigger functions or other non-definer functions');
@@ -81,6 +82,12 @@ BEGIN
     PERFORM pg_temp.assert_true(NOT has_function_privilege('bicycle_app', 'bicycle_rental.provision_staff(text,text,text,text)', 'EXECUTE')
         AND has_function_privilege('bicycle_setup', 'bicycle_rental.provision_staff(text,text,text,text)', 'EXECUTE'),
         'only the setup role, not bicycle_app, may provision staff');
+
+    PERFORM pg_temp.assert_true(has_function_privilege('bicycle_app', 'bicycle_rental.submit_payment(bigint,uuid,bicycle_rental.payment_status,boolean)', 'EXECUTE')
+        AND has_function_privilege('bicycle_app', 'bicycle_rental.request_payment(bigint,bigint)', 'EXECUTE')
+        AND NOT has_function_privilege('bicycle_app', 'bicycle_rental.simulator_submit(uuid,bigint,numeric,character varying)', 'EXECUTE')
+        AND NOT has_function_privilege('bicycle_app', 'bicycle_rental.apply_payment_confirmation(uuid,bigint,numeric,character varying,text)', 'EXECUTE'),
+        'bicycle_app can use the payment entry points but not the simulator or confirmation internals');
 
     ------ fixtures (as the owner)
     v_staff := provision_staff('Acl', 'Staff', v_prefix || '-staff@test.invalid', 'pw-staff');
