@@ -59,9 +59,15 @@ BEGIN
             ('audit_action_type', ARRAY[
                 'rider_block', 'rider_unblock', 'station_create', 'station_update',
                 'maintenance_handover', 'maintenance_return',
-                'maintenance_state_update', 'staff_return'
+                'maintenance_state_update', 'staff_return',
+                'fault_report_submit', 'fault_report_link', 'fault_report_review',
+                'maintenance_job_open', 'maintenance_job_assign', 'maintenance_job_start',
+                'maintenance_job_complete', 'maintenance_job_cancel',
+                'maintenance_task_add', 'maintenance_task_complete'
             ]::TEXT[]),
-            ('audit_record_type', ARRAY['Rider', 'Bicycle', 'Station', 'Rental']::TEXT[]),
+            ('audit_record_type', ARRAY[
+                'Rider', 'Bicycle', 'Station', 'Rental', 'FaultReport', 'MaintenanceJob'
+            ]::TEXT[]),
             ('fault_category', ARRAY['brakes', 'tyres', 'drivetrain', 'battery', 'electrical', 'other']::TEXT[]),
             ('fault_severity', ARRAY['minor', 'major', 'critical']::TEXT[]),
             ('fault_status', ARRAY['open', 'resolved', 'rejected']::TEXT[]),
