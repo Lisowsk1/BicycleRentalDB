@@ -60,17 +60,20 @@ jobs:
             --dbname "$POSTGRES_DB" \
             --set=ON_ERROR_STOP=1 < db/checks/setup.sql
 
+      - name: Test account system
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/account_system.sql
+
       - name: Test fleet and station constraints
         run: |
           docker compose exec -T db psql \
             --username "$POSTGRES_USER" \
             --dbname "$POSTGRES_DB" \
             --set=ON_ERROR_STOP=1 < db/tests/fleet_station.sql
-<<<<<<< HEAD
 
-=======
-      
->>>>>>> 0107bca78d261ac59be997211a7b46937ccfb39b
       - name: Test setup guards in a fresh connection
         run: |
           docker compose exec -T db psql \
@@ -109,10 +112,32 @@ jobs:
           docker compose exec -T db sh -c \
             'export PGUSER="$POSTGRES_USER" PGDATABASE="$POSTGRES_DB"; exec bash' \
             < db/tests/payment_concurrency_test.sh
-<<<<<<< HEAD
-=======
-      
->>>>>>> 0107bca78d261ac59be997211a7b46937ccfb39b
+
+      - name: Test fault reports and maintenance management
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/fault_and_maintenance.sql
+
+      - name: Test bicycle movements and history
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/bicycle_movement.sql
+
+      - name: Test competing bicycle movements
+        run: |
+          PSQL_CMD="docker compose exec -T db psql --username $POSTGRES_USER --dbname $POSTGRES_DB" \
+            bash db/tests/bicycle_movement_concurrency.sh
+
+      - name: Test role access control
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/access_control.sql
 
       - name: Show database logs on failure
         if: failure()
