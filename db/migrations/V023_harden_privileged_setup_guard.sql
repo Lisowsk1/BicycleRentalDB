@@ -21,15 +21,19 @@ AS $$
 $$;
 
 -- 2. Update V002's tariff & audit trigger functions to use the hardened checks.
-CREATE OR REPLACE FUNCTION bicycle_rental.enforce_audit_append_only()
+CREATE OR REPLACE FUNCTION bicycle_rental.enforce_tariff_privileged_only()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    IF NOT bicycle_rental.is_privileged_reset() THEN
-        RAISE EXCEPTION 'Audit tables are append-only: % on % is prohibited.', TG_OP, TG_TABLE_NAME;
+    IF NOT bicycle_rental.is_privileged_setup() THEN
+        RAISE EXCEPTION 'Tariff records cannot be inserted, updated, or deleted operationally.';
     END IF;
-    RETURN OLD;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
@@ -39,8 +43,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     IF NOT bicycle_rental.is_privileged_reset() THEN
-        RAISE EXCEPTION 'Audit tables are append-only: % on % is prohibited.', TG_OP, TG_TABLE_NAME
-            USING ERRCODE = '23000';
+        RAISE EXCEPTION 'Audit tables are append-only: % on % is prohibited.', TG_OP, TG_TABLE_NAME;
     END IF;
     RETURN OLD;
 END;
