@@ -27,7 +27,8 @@ BEGIN
 
     FOREACH expected_table IN ARRAY ARRAY[
         'tariff', 'audit_entry', 'audit_detail', 'account', 'rider', 'staff',
-        'station', 'bicycle', 'electric_bicycle', 'maintenance_provider', 'rental', 'payment',
+        'station', 'bicycle', 'electric_bicycle', 'maintenance_provider',
+        'rental', 'payment', 'bicycle_transfer',
         'maintenance_job', 'maintenance_task', 'fault_report'
     ]
     LOOP
@@ -44,9 +45,17 @@ BEGIN
 
     FOR expected_enum IN
         SELECT * FROM (VALUES
+            ('account_role', ARRAY['rider', 'staff']::TEXT[]),
+            ('rider_status', ARRAY['active', 'blocked']::TEXT[]),
             ('bicycle_type', ARRAY['regular', 'electric']::TEXT[]),
             ('bicycle_placement', ARRAY['station', 'active_rental', 'maintenance_provider']::TEXT[]),
             ('maintenance_state', ARRAY['serviceable', 'unavailable_for_maintenance']::TEXT[]),
+            ('payment_status', ARRAY['pending', 'successful', 'failed']::TEXT[]),
+            ('simulator_scenario', ARRAY['success', 'failure', 'success_lost_response', 'unavailable']::TEXT[]),
+            ('payment_event_type', ARRAY[
+                'requested', 'submission_attempted', 'submission_unconfirmed',
+                'confirmed_successful', 'confirmed_failed'
+            ]::TEXT[]),
             ('audit_action_type', ARRAY[
                 'rider_block', 'rider_unblock', 'station_create', 'station_update',
                 'maintenance_handover', 'maintenance_return',
