@@ -49,7 +49,9 @@ BEGIN
 END;
 $$;
 
--- 3. Verify that bicycle_app can execute submit_payment and its two phase functions.
+-- 3. Close all routines in bicycle_rental to PUBLIC (matching V022), then grant explicitly.
+REVOKE ALL ON ALL ROUTINES IN SCHEMA bicycle_rental FROM PUBLIC;
+
 GRANT EXECUTE ON FUNCTION bicycle_rental.prepare_payment_submission(bigint, uuid) TO bicycle_app;
 GRANT EXECUTE ON FUNCTION bicycle_rental.confirm_payment_submission(bigint, uuid) TO bicycle_app;
 GRANT EXECUTE ON PROCEDURE bicycle_rental.submit_payment(bigint, uuid, bicycle_rental.payment_status, boolean) TO bicycle_app;
