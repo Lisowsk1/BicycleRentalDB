@@ -132,6 +132,18 @@ jobs:
           PSQL_CMD="docker compose exec -T db psql --username $POSTGRES_USER --dbname $POSTGRES_DB" \
             bash db/tests/bicycle_movement_concurrency.sh
 
+      - name: Test audit integration
+        run: |
+          docker compose exec -T db psql \
+            --username "$POSTGRES_USER" \
+            --dbname "$POSTGRES_DB" \
+            --set=ON_ERROR_STOP=1 < db/tests/audit_integration.sql
+
+      - name: Test competing maintenance job creation
+        run: |
+          PSQL_CMD="docker compose exec -T db psql --username $POSTGRES_USER --dbname $POSTGRES_DB" \
+            bash db/tests/maintenance_job_concurrency.sh
+
       - name: Test role access control
         run: |
           docker compose exec -T db psql \
