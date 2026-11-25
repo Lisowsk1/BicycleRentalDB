@@ -34,10 +34,14 @@ BEGIN
         'Other', 'Rider', 'other.maint.rider@bicyclerental.local', 'RiderPass123!'
     );
 
-    SELECT account_id INTO v_rider_id FROM bicycle_rental.rider WHERE account_id <> v_other_rider LIMIT 1;
     SELECT bicycle_id INTO v_reg_bike_id FROM bicycle_rental.bicycle WHERE identifier = 'BIKE-REG-001';
     SELECT bicycle_id INTO v_elc_bike_id FROM bicycle_rental.bicycle WHERE identifier = 'BIKE-ELC-001';
-    SELECT rental_id INTO v_rental_id FROM bicycle_rental.rental WHERE bicycle_id = v_reg_bike_id LIMIT 1;
+    SELECT r.rental_id, r.rider_id
+      INTO v_rental_id, v_rider_id
+      FROM bicycle_rental.rental r
+     WHERE r.bicycle_id = v_reg_bike_id
+     LIMIT 1;
+    SELECT station_id INTO v_station_id FROM bicycle_rental.station LIMIT 1;
     SELECT station_id INTO v_station_id FROM bicycle_rental.station LIMIT 1;
 
     -- 1. MaintenanceProvider creation, update, and role enforcement (F-019, F-036)
