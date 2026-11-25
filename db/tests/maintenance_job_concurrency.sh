@@ -17,7 +17,8 @@ q() {
 }
 
 # Each psql worker queues behind an advisory-lock barrier, then runs the same
-# operation at once. Results capture the server SQLSTATE for exact assertions.
+# operation at once. A PL/pgSQL exception block emits one explicit result marker
+# for each request instead of inferring the outcome from psql's last-error state.
 race_job_open() {
     printf 'SELECT pg_advisory_lock(7, %s);\nSELECT pg_sleep(60);\n' "$KEY" \
         | $PSQL -X -At -q >/dev/null 2>&1 &
@@ -32,17 +33,16 @@ race_job_open() {
     for _ in 1 2; do
         i=$((i + 1))
         (
-            printf 'SELECT pg_advisory_lock_shared(7, %s);\nSELECT bicycle_rental.open_maintenance_job(%s, %s, NULL, %s);\n\\echo RESULT_SQLSTATE=:LAST_ERROR_SQLSTATE\n' \
+            if ! printf "SELECT pg_advisory_lock_shared(7, %s);\nDO \$job_race\$\nBEGIN\n    PERFORM bicycle_rental.open_maintenance_job(%s, %s, NULL, %s);\n    RAISE NOTICE 'JOB_OPEN_RESULT|success';\nEXCEPTION WHEN SQLSTATE '55000' THEN\n    RAISE NOTICE 'JOB_OPEN_RESULT|conflict';\nEND\n\$job_race\$;\n" \
                 "$KEY" "$STAFF" "$BIKE" "$STAFF" |
-                $PSQL -X -At -q 2>&1 | tr -d '\r' > "$TMP/raw.$i"
-            local code
-            code=$(grep -o 'RESULT_SQLSTATE=.*' "$TMP/raw.$i" | tail -n 1 | cut -d= -f2)
-            if [ -z "$code" ]; then
-                printf 'ERR|no-result\n' > "$TMP/result.$i"
-            elif [ "$code" != 00000 ]; then
-                printf 'ERR|%s\n' "$code" > "$TMP/result.$i"
+                $PSQL -X -q -v ON_ERROR_STOP=1 > "$TMP/raw.$i" 2>&1; then
+                printf 'ERROR\n' > "$TMP/result.$i"
+            elif grep -Fq 'JOB_OPEN_RESULT|success' "$TMP/raw.$i"; then
+                printf 'SUCCESS\n' > "$TMP/result.$i"
+            elif grep -Fq 'JOB_OPEN_RESULT|conflict' "$TMP/raw.$i"; then
+                printf 'CONFLICT\n' > "$TMP/result.$i"
             else
-                printf 'OK|%s\n' "$(grep -v 'RESULT_SQLSTATE=' "$TMP/raw.$i" | tr '\n' ' ' | sed 's/ $//')" > "$TMP/result.$i"
+                printf 'ERROR\n' > "$TMP/result.$i"
             fi
         ) &
         pids+=("$!")
@@ -92,10 +92,12 @@ if [ -z "$STATION" ] || [ -z "$BIKE" ]; then
 fi
 
 race_job_open
-check "$(awk '/^OK\\|/ { n++ } END { print n+0 }' "$TMP/result.1" "$TMP/result.2")" \
+check "$(awk '$0 == "SUCCESS" { n++ } END { print n+0 }' "$TMP/result.1" "$TMP/result.2")" \
     1 'exactly one competing job opening succeeds'
-check "$(awk '/^ERR\\|55000$/ { n++ } END { print n+0 }' "$TMP/result.1" "$TMP/result.2")" \
+check "$(awk '$0 == "CONFLICT" { n++ } END { print n+0 }' "$TMP/result.1" "$TMP/result.2")" \
     1 'losing request is rejected as an active-job business conflict'
+check "$(awk '$0 == "ERROR" { n++ } END { print n+0 }' "$TMP/result.1" "$TMP/result.2")" \
+    0 'both concurrent requests returned a classified result'
 check "$(q "SELECT count(*) FROM bicycle_rental.maintenance_job WHERE bicycle_id=$BIKE AND status IN ('open','in_progress')")" \
     1 'at most one active maintenance job is persisted'
 check "$(q "SELECT count(*) FROM bicycle_rental.audit_entry WHERE primary_record_type='MaintenanceJob' AND primary_record_id=(SELECT job_id FROM bicycle_rental.maintenance_job WHERE bicycle_id=$BIKE) AND action_type='maintenance_job_open' AND operation_type='maintenance_job_open'")" \
