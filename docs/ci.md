@@ -67,20 +67,17 @@ docker compose run --rm flyway info
 To run the same SQL setup check and tests in PowerShell using the container's configured username and database, run the files you need (this is the workflow order; run `test_privileged_setup_guard.sql` last because it commits its data):
 
 ```powershell
-Get-Content -Raw db/checks/setup.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/account_system.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/fleet_station.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/setup_guards.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/rental_lifecycle.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/payment_processing_tests.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/payment_recovery_tests.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/fault_and_maintenance.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/bicycle_movement.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/audit_integration.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/access_control.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/retention_purge.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/remaining_operations.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
-Get-Content -Raw db/tests/test_privileged_setup_guard.sql | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
+$tests = 'db/checks/setup.sql',
+  'db/tests/account_system.sql', 'db/tests/fleet_station.sql', 'db/tests/setup_guards.sql',
+  'db/tests/rental_lifecycle.sql', 'db/tests/payment_processing_tests.sql',
+  'db/tests/payment_recovery_tests.sql', 'db/tests/fault_and_maintenance.sql',
+  'db/tests/bicycle_movement.sql', 'db/tests/audit_integration.sql', 'db/tests/access_control.sql',
+  'db/tests/retention_purge.sql', 'db/tests/remaining_operations.sql', 'db/tests/test_privileged_setup_guard.sql'
+foreach ($t in $tests) {
+  Write-Host "== $t"
+  Get-Content -Raw $t | docker compose exec -T db sh -c 'psql --username=$POSTGRES_USER --dbname=$POSTGRES_DB --set=ON_ERROR_STOP=1'
+  if ($LASTEXITCODE -ne 0) { throw "$t failed" }
+}
 ```
 
 A passing file finishes without an error (some print a count of passed checks); a failure stops with an `ERROR: FAIL ...` message naming the failed check. The tests roll back, so you can rerun them. The account, access-control, retention, remaining-operations and guard tests switch roles, create temporary logins or write to protected tables directly, so run them as the superuser account created by the container (the `.env` user). Run `test_privileged_setup_guard.sql` last: it commits its data.
