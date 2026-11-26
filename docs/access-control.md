@@ -58,7 +58,7 @@ Operational `DELETE` and `UPDATE` stay blocked on all of these tables. Only the 
 - **The database trusts the acting account id.** `bicycle_app` can pass any staff or rider id as `p_actor_id`. The application must authenticate users and pass the right id. A compromised application can act as any user, so this limits what a stolen login can do but does not replace application security.
 - **`reset_baseline()` is also granted to `bicycle_app`.** It refuses any caller whose login is not a member of `bicycle_setup`, so an ordinary application login is rejected; the grant is still broader than needed and should move to `bicycle_setup` only.
 - **`bicycle_setup` has broad table access.** Treat it as an administrator role.
-- **Retention periods.** The purge applies one 36-month cutoff to every record type. The requirements list 24 months for rentals (after completion) and for payments (after rental deletion). A rental older than 24 months but younger than 36 months is therefore kept, and rentals with a payment are removed only after the payment is.
+- **Retention periods.** The purge applies one 36-month cutoff to every record type, which matches the retention table in the requirements: rentals are kept 36 months after completion and payments 36 months after their last update. A rental with a payment is removed only after the payment is.
 - **Future routines.** Routines added by later migrations are closed to PUBLIC automatically. Grant each operation function to `bicycle_app` (or `bicycle_setup`) explicitly:
 
   ```sql
