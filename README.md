@@ -170,7 +170,7 @@ Your database data stays saved. Next time, start Docker Desktop and run `docker 
 - [Access control and database roles](docs/access-control.md): `bicycle_app`, `bicycle_setup`, grants, retention purge
 - [Bicycle movements](docs/bicycle-movements.md): station transfers, maintenance handover and return, history
 - [Payments](docs/payments.md) and [audit integration](docs/audit-integration.md)
-- [Entity-relationship diagram](docs/diagrams/Bike%20Rental%20v2%20ERD.mmd) and [component diagram](docs/diagrams/Bike%20Rental%20v2%20Component%20Diagram.mmd)
+- [Entity-relationship diagram](docs/diagrams/Bike%20Rental%20v2%20ERD.mmd)
 - Requirements: [docs/requirements](docs/requirements/Bicycle_Rental_V2.pdf)
 
 ## Troubleshooting and local reset
