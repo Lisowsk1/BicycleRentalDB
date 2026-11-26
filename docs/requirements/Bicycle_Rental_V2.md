@@ -125,8 +125,8 @@ $< 300\,\mathrm{s}$ & Purely analytical, doesn't matter that much.\
 
 AuditEntry & 36 months after creation\
 AuditDetail & 36 months, together with AuditEntry\
-Rental & 24 months after completion\
-Payment & 24 months after rental deletion\
+Rental & 36 months after completion\
+Payment & 36 months after the last update\
 FaultReport & 36 months after resolution\
 MaintenanceJob & 36 months after closing\
 MaintenanceTask & 36 months, together with MaintenanceJob\
