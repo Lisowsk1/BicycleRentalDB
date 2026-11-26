@@ -164,6 +164,15 @@ docker compose down
 
 Your database data stays saved. Next time, start Docker Desktop and run `docker compose up -d --wait db` again.
 
+## Documentation
+
+- [Continuous integration and running the tests](docs/ci.md)
+- [Access control and database roles](docs/access-control.md): `bicycle_app`, `bicycle_setup`, grants, retention purge
+- [Bicycle movements](docs/bicycle-movements.md): station transfers, maintenance handover and return, history
+- [Payments](docs/payments.md) and [audit integration](docs/audit-integration.md)
+- [Entity-relationship diagram](docs/diagrams/Bike%20Rental%20v2%20ERD.mmd) and [component diagram](docs/diagrams/Bike%20Rental%20v2%20Component%20Diagram.mmd)
+- Requirements: [docs/requirements](docs/requirements/Bicycle_Rental_V2.pdf)
+
 ## Troubleshooting and local reset
 
 - **Docker command missing:** install Docker Desktop and reopen your terminal. If you use VS Code, fully close and reopen VS Code so its terminals inherit the updated PATH.
@@ -203,4 +212,4 @@ docker compose run --rm flyway migrate
 See [simulated payment usage and recovery](docs/payments.md) for the payment procedure,
 transaction boundaries, and retry behavior.
 
-The [requirements specification](docs/latex) describes the planned project features.
+The [requirements specification](docs/requirements/Bicycle_Rental_V2.pdf) describes the planned project features.
